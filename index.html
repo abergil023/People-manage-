@@ -1,0 +1,593 @@
+<title>מצבת הצוות</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;600;700&family=Rubik:wght@500;600;700&display=swap">
+<style>
+/* Layout: one narrow column, sticky header with the day's headcount, bottom tab bar; screens swap in place. Field-notebook olive + khaki. */
+:root {
+  --bg: #F1F2EC;
+  --surface: #FFFFFF;
+  --surface-2: #E7E9DF;
+  --ink: #1C2118;
+  --muted: #5F6657;
+  --line: #D3D7C8;
+  --accent: #46572A;
+  --accent-ink: #FFFFFF;
+  --khaki: #8B6F47;
+  --ok: #2C7442; --ok-bg: #DCEEDD;
+  --warn: #9A6200; --warn-bg: #F8E8C4;
+  --bad: #B3261E; --bad-bg: #F7D9D5;
+  --home: #9A5B13; --home-bg: #F4E4CE;
+  --course: #2D5C86; --course-bg: #DBE7F2;
+  --nir: #62645E; --nir-bg: #E3E4DF;
+  --off: #ECEDE7;
+  --shadow: 0 1px 2px rgba(28,33,24,.08), 0 4px 16px rgba(28,33,24,.06);
+  --f-display: "Rubik", "Assistant", system-ui, sans-serif;
+  --f-body: "Assistant", "Rubik", system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #15180F; --surface: #1F2418; --surface-2: #2A3021; --ink: #E8EADF; --muted: #A3A995; --line: #3A4130;
+  --accent: #A9C17A; --accent-ink: #15180F; --khaki: #C9A878;
+  --ok: #7FCB91; --ok-bg: #1E3A25; --warn: #E8B25A; --warn-bg: #3E3018; --bad: #F08A80; --bad-bg: #47201C;
+  --home: #E2A35B; --home-bg: #3D2C17; --course: #8DB8E0; --course-bg: #1C2E40; --nir: #B0B2AA; --nir-bg: #2D2F2A;
+  --off: #1A1E14; --shadow: 0 1px 2px rgba(0,0,0,.4); color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #15180F; --surface: #1F2418; --surface-2: #2A3021; --ink: #E8EADF; --muted: #A3A995; --line: #3A4130;
+  --accent: #A9C17A; --accent-ink: #15180F; --khaki: #C9A878;
+  --ok: #7FCB91; --ok-bg: #1E3A25; --warn: #E8B25A; --warn-bg: #3E3018; --bad: #F08A80; --bad-bg: #47201C;
+  --home: #E2A35B; --home-bg: #3D2C17; --course: #8DB8E0; --course-bg: #1C2E40; --nir: #B0B2AA; --nir-bg: #2D2F2A;
+  --off: #1A1E14; --shadow: 0 1px 2px rgba(0,0,0,.4); color-scheme: dark; }
+
+* { box-sizing: border-box; }
+html, body { direction: rtl; }
+body { background: var(--bg); color: var(--ink); font-family: var(--f-body); font-size: 16px; line-height: 1.45; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--accent); }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.num { font-family: var(--f-display); font-variant-numeric: tabular-nums; }
+
+/* header */
+.top { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--accent); color: var(--accent-ink);
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 12px 14px; }
+.top-in { max-width: 760px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.brand { font-family: var(--f-display); font-weight: 700; font-size: 1.15rem; letter-spacing: .01em; }
+.brand small { display: block; font-family: var(--f-body); font-weight: 600; font-size: .78rem; opacity: .8; letter-spacing: .04em; }
+.now { text-align: left; }
+.now b { font-family: var(--f-display); font-size: 1.6rem; line-height: 1; font-variant-numeric: tabular-nums; }
+.now span { display: block; font-size: .78rem; opacity: .85; }
+
+main { max-width: 760px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 16px calc(96px + env(safe-area-inset-bottom, 0px)); display: grid; gap: 16px; }
+.notice { background: var(--warn-bg); color: var(--ink); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; font-size: .92rem; }
+
+/* tabs */
+.tabs { position: fixed; inset: auto 0 0 0; z-index: 6; background: var(--surface); border-top: 1px solid var(--line);
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 8px calc(8px + env(safe-area-inset-bottom, 0px)); }
+.tabs-in { max-width: 760px; margin: 0 auto; display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.tab { border: 0; background: transparent; padding: 8px 4px; border-radius: 10px; font-weight: 700; color: var(--muted); }
+.tab[aria-current="page"] { background: var(--surface-2); color: var(--ink); }
+
+/* section headings */
+h2 { font-family: var(--f-display); font-size: 1.05rem; font-weight: 600; margin: 0; text-wrap: balance; }
+.eyebrow { font-size: .75rem; font-weight: 700; letter-spacing: .08em; color: var(--muted); }
+.row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px; display: grid; gap: 12px; min-width: 0; }
+
+/* buttons */
+.btn { border: 1px solid var(--line); background: var(--surface); border-radius: 10px; padding: 8px 14px; font-weight: 700; }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.btn.danger { color: var(--bad); border-color: var(--bad); background: transparent; }
+.btn.small { padding: 4px 10px; font-size: .88rem; }
+.btn.ghost { border-color: transparent; background: transparent; }
+.fab { position: fixed; left: max(16px, env(safe-area-inset-left, 0px)); bottom: calc(76px + env(safe-area-inset-bottom, 0px)); z-index: 7; border: 0; border-radius: 999px; padding: 14px 20px; background: var(--accent); color: var(--accent-ink); font-weight: 700; box-shadow: var(--shadow); }
+
+/* summary strip */
+.strip { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.stat { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; min-width: 0; }
+.stat b { font-family: var(--f-display); font-size: 1.4rem; display: block; font-variant-numeric: tabular-nums; }
+.stat span { font-size: .8rem; color: var(--muted); }
+
+/* calendar */
+.month { display: grid; gap: 8px; }
+.month h2 { padding-inline: 2px; }
+.grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.dow { text-align: center; font-size: .75rem; font-weight: 700; color: var(--muted); padding-bottom: 2px; }
+.cell { min-height: 64px; border-radius: 10px; padding: 5px 4px; display: flex; flex-direction: column; align-items: center; gap: 2px; border: 1px solid transparent; background: var(--off); color: var(--muted); font-size: .8rem; }
+.cell.blank { background: transparent; }
+.cell.res { background: var(--surface); color: var(--ink); border-color: var(--line); cursor: pointer; }
+.cell.res .cnt { font-family: var(--f-display); font-weight: 600; font-size: 1rem; font-variant-numeric: tabular-nums; border-radius: 6px; padding: 1px 5px; line-height: 1.3; }
+.cell.res .cnt small { font-size: .65rem; opacity: .75; }
+.cell .partial { font-size: .62rem; color: var(--muted); }
+.cell.today { outline: 2px solid var(--khaki); outline-offset: -2px; }
+.ok { color: var(--ok); background: var(--ok-bg); }
+.warn { color: var(--warn); background: var(--warn-bg); }
+.bad { color: var(--bad); background: var(--bad-bg); }
+.legend { display: flex; flex-wrap: wrap; gap: 10px; font-size: .8rem; color: var(--muted); }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-inline-end: 4px; vertical-align: -1px; }
+
+/* day view */
+.dayhead { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; }
+.dayhead h2 { text-align: center; font-size: 1.15rem; }
+.big { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.big b { font-family: var(--f-display); font-size: 2.6rem; line-height: 1; border-radius: 12px; padding: 4px 12px; font-variant-numeric: tabular-nums; }
+.big span { color: var(--muted); font-size: .9rem; }
+.timeline { display: flex; height: 26px; border-radius: 8px; overflow: hidden; border: 1px solid var(--line); direction: ltr; }
+.timeline div { display: flex; align-items: center; justify-content: center; font-size: .75rem; font-weight: 700; font-family: var(--f-display); min-width: 0; overflow: hidden; }
+.ticks { display: flex; justify-content: space-between; font-size: .68rem; color: var(--muted); direction: ltr; }
+.seglist { display: grid; gap: 4px; font-size: .9rem; }
+.seglist div { display: flex; justify-content: space-between; gap: 8px; }
+.list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.item { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border-radius: 10px; background: var(--surface-2); min-width: 0; }
+.item .who { font-weight: 700; }
+.item .meta { font-size: .85rem; color: var(--muted); overflow-wrap: anywhere; }
+.item button { flex: none; }
+.chip { display: inline-block; font-size: .78rem; font-weight: 700; border-radius: 999px; padding: 2px 9px; }
+.c-home { color: var(--home); background: var(--home-bg); }
+.c-course { color: var(--course); background: var(--course-bg); }
+.c-nir { color: var(--nir); background: var(--nir-bg); }
+.c-present { color: var(--ok); background: var(--ok-bg); }
+.names { display: flex; flex-wrap: wrap; gap: 6px; }
+.names span { background: var(--ok-bg); color: var(--ok); border-radius: 8px; padding: 2px 9px; font-size: .88rem; font-weight: 600; }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.copybox { width: 100%; min-height: 160px; border: 1px solid var(--line); border-radius: 10px; padding: 8px; background: var(--surface-2); }
+
+/* soldiers */
+.srow { display: grid; grid-template-columns: minmax(0, 7rem) minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px; background: var(--surface); border: 1px solid var(--line); width: 100%; text-align: right; }
+.srow .bar { height: 10px; border-radius: 5px; background: var(--surface-2); overflow: hidden; display: flex; direction: rtl; }
+.srow .bar i { display: block; height: 100%; }
+.srow .n { font-size: .85rem; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.seg button { border: 0; background: var(--surface); padding: 6px 12px; font-weight: 700; color: var(--muted); }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+
+/* forms */
+.field { display: grid; gap: 4px; min-width: 0; }
+.field label, .lbl { font-size: .82rem; font-weight: 700; color: var(--muted); }
+.field input, .field select, .field textarea, .inp { border: 1px solid var(--line); background: var(--surface); border-radius: 10px; padding: 8px 10px; width: 100%; min-width: 0; }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.err { color: var(--bad); font-size: .88rem; font-weight: 600; }
+.overlay { position: fixed; inset: 0; z-index: 20; background: rgba(10,12,8,.45); display: flex; align-items: flex-end; justify-content: center; }
+.sheet { background: var(--bg); width: 100%; max-width: 560px; max-height: 92%; overflow: auto; border-radius: 18px 18px 0 0; display: grid; gap: 12px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 16px calc(16px + env(safe-area-inset-bottom, 0px)); }
+@media (min-width: 640px) { .overlay { align-items: center; } .sheet { border-radius: 18px; } }
+.setrow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+.rangerow { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 8px; align-items: end; }
+.muted { color: var(--muted); }
+.toast { position: fixed; z-index: 30; left: 50%; transform: translateX(-50%); bottom: calc(140px + env(safe-area-inset-bottom, 0px)); background: var(--ink); color: var(--bg); padding: 8px 16px; border-radius: 999px; font-weight: 700; }
+.empty { text-align: center; color: var(--muted); padding: 20px 8px; }
+@media (max-width: 420px) { .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } .srow { grid-template-columns: minmax(0, 5.5rem) minmax(0, 1fr) auto; } .cell { min-height: 56px; } .cell.res .cnt { font-size: .9rem; padding: 1px 3px; } }
+@media (prefers-reduced-motion: no-preference) { .sheet { animation: up .18s ease-out; } @keyframes up { from { transform: translateY(16px); opacity: .6; } } }
+</style>
+
+<header class="top"><div class="top-in">
+  <div class="brand">מצבת הצוות<small>ניהול כוח אדם · מילואים</small></div>
+  <div class="now" id="now"></div>
+</div></header>
+
+<main id="app"><div class="empty">טוען נתונים…</div></main>
+
+<button class="fab" id="fab" data-act="new">+ יציאה / היעדרות</button>
+
+<nav class="tabs" aria-label="ניווט"><div class="tabs-in">
+  <button class="tab" data-tab="cal">לוח</button>
+  <button class="tab" data-tab="soldiers">לוחמים</button>
+  <button class="tab" data-tab="settings">הגדרות</button>
+</div></nav>
+
+<div id="modal"></div>
+<div id="toast" class="toast" hidden></div>
+
+<script>
+"use strict";
+/* ---------- constants ---------- */
+const TYPES = { home: "בבית", course: "קורס", nir: "לא במילואים" };
+const TYPE_CLS = { home: "c-home", course: "c-course", nir: "c-nir" };
+const PRIORITY = { nir: 3, course: 2, home: 1 };
+const REASONS = ["יציאה", "מחלה", "אישי", "לימודים", "אחר"];
+const DOW = ["א׳", "ב׳", "ג׳", "ד׳", "ה׳", "ו׳", "ש׳"];
+const DOW_LONG = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"];
+const MONTHS = ["ינואר", "פברואר", "מרץ", "אפריל", "מאי", "יוני", "יולי", "אוגוסט", "ספטמבר", "אוקטובר", "נובמבר", "דצמבר"];
+
+/* ---------- state ---------- */
+const S = {
+  soldiers: [], absences: [], settings: null,
+  loaded: { soldiers: false, absences: false, settings: false },
+  tab: "cal", day: null, soldier: null, sort: "out",
+  notice: "", cache: null, copyText: null
+};
+let db = null;
+
+/* ---------- date helpers (all local time) ---------- */
+const pad = n => String(n).padStart(2, "0");
+const keyOf = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+function dOf(key) { const [y, m, d] = key.split("-").map(Number); return new Date(y, m - 1, d); }
+function addDays(key, n) { const d = dOf(key); d.setDate(d.getDate() + n); return keyOf(d); }
+function ms(s) { const [d, t = "00:00"] = s.split("T"); const [h, mi] = t.split(":").map(Number); const x = dOf(d); x.setHours(h, mi, 0, 0); return x.getTime(); }
+const short = key => { const d = dOf(key); return `${d.getDate()}.${d.getMonth() + 1}`; };
+const longDate = key => { const d = dOf(key); return `יום ${DOW_LONG[d.getDay()]}, ${d.getDate()} ב${MONTHS[d.getMonth()]}`; };
+const hm = t => { const d = new Date(t); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+const todayKey = () => keyOf(new Date());
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const ltr = s => "\u2066" + s + "\u2069";
+const span2 = (a, b) => ltr(`${a}–${b}`);
+const uid = p => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+
+/* ---------- derived data ---------- */
+function settings() { return S.settings || { reserveRanges: [], minStrength: 15 }; }
+function activeSoldiers() { return S.soldiers.filter(s => s.active !== false); }
+function reserveDays() {
+  const set = new Set();
+  for (const r of settings().reserveRanges || []) {
+    if (!r.from || !r.to || r.to < r.from) continue;
+    for (let k = r.from; k <= r.to; k = addDays(k, 1)) set.add(k);
+  }
+  return [...set].sort();
+}
+function statusCls(n) { const m = Number(settings().minStrength) || 0; return n < m ? "bad" : n === m ? "warn" : "ok"; }
+
+function dayInfo(key) {
+  const s0 = ms(key), s1 = ms(addDays(key, 1));
+  const per = activeSoldiers().map(sol => {
+    const abs = S.absences.filter(a => a.soldierId === sol.id && ms(a.start) < s1 && ms(a.end) > s0);
+    const full = abs.filter(a => ms(a.start) <= s0 && ms(a.end) >= s1).sort((a, b) => PRIORITY[b.type] - PRIORITY[a.type])[0] || null;
+    return { sol, full, partial: full ? [] : abs };
+  });
+  const pts = new Set([s0, s1]);
+  per.forEach(p => p.partial.forEach(a => { pts.add(Math.max(s0, ms(a.start))); pts.add(Math.min(s1, ms(a.end))); }));
+  const sorted = [...pts].sort((a, b) => a - b);
+  const segs = [];
+  for (let i = 0; i < sorted.length - 1; i++) {
+    const t = sorted[i];
+    const n = per.filter(p => !p.full && !p.partial.some(a => ms(a.start) <= t && ms(a.end) > t)).length;
+    const last = segs[segs.length - 1];
+    if (last && last.n === n) last.t1 = sorted[i + 1]; else segs.push({ t0: t, t1: sorted[i + 1], n });
+  }
+  const min = segs.length ? Math.min(...segs.map(s => s.n)) : per.length;
+  return { key, s0, s1, per, segs, min, total: per.length, hasPartial: per.some(p => p.partial.length) };
+}
+function cache() {
+  if (!S.cache) { const days = reserveDays(); S.cache = { days, info: new Map(days.map(k => [k, dayInfo(k)])) }; }
+  return S.cache;
+}
+function presentNow() {
+  const k = todayKey(); const info = cache().info.get(k); if (!info) return null;
+  const t = Date.now();
+  const n = info.per.filter(p => !p.full && !p.partial.some(a => ms(a.start) <= t && ms(a.end) > t)).length;
+  return { n, total: info.total };
+}
+function soldierStats(id) {
+  const st = { home: 0, course: 0, nir: 0, partial: 0, present: 0 };
+  for (const info of cache().info.values()) {
+    const p = info.per.find(x => x.sol.id === id); if (!p) continue;
+    if (p.full) st[p.full.type]++; else { st.present++; if (p.partial.length) st.partial++; }
+  }
+  return st;
+}
+function absRangeText(a) {
+  if (a.allDay) { const from = a.start.slice(0, 10), to = addDays(a.end.slice(0, 10), -1); return from === to ? short(from) : span2(short(from), short(to)); }
+  const f = a.start.slice(0, 10), t = a.end.slice(0, 10);
+  return f === t ? `${short(f)} · ${span2(a.start.slice(11), a.end.slice(11))}` : `${ltr(short(f) + " " + a.start.slice(11))} עד ${ltr(short(t) + " " + a.end.slice(11))}`;
+}
+function absDays(a) { let n = 0; for (const k of cache().days) { if (ms(a.start) <= ms(k) && ms(a.end) >= ms(addDays(k, 1))) n++; } return n; }
+const nameOf = id => (S.soldiers.find(s => s.id === id) || {}).name || "לוחם שהוסר";
+const reasonText = a => a.type === "home" ? [a.reason, a.note].filter(Boolean).join(" · ") : (a.note || "");
+
+/* ---------- render ---------- */
+const app = document.getElementById("app");
+function render() {
+  document.querySelectorAll(".tab").forEach(b => b.setAttribute("aria-current", b.dataset.tab === S.tab || (S.tab === "day" && b.dataset.tab === "cal") || (S.tab === "soldier" && b.dataset.tab === "soldiers") ? "page" : "false"));
+  renderNow();
+  const notice = S.notice ? `<div class="notice">${esc(S.notice)}</div>` : "";
+  const ready = S.loaded.soldiers && S.loaded.settings && S.loaded.absences;
+  let body;
+  if (!ready && !S.notice) body = `<div class="empty">טוען נתונים…</div>`;
+  else if (S.tab === "day") body = viewDay();
+  else if (S.tab === "soldiers") body = viewSoldiers();
+  else if (S.tab === "soldier") body = viewSoldier();
+  else if (S.tab === "settings") body = viewSettings();
+  else body = viewCal();
+  app.innerHTML = notice + body;
+}
+function renderNow() {
+  const el = document.getElementById("now");
+  if (!S.loaded.soldiers) { el.innerHTML = ""; return; }
+  const p = presentNow();
+  if (p) { el.innerHTML = `<b>${p.n}/${p.total}</b><span>נוכחים עכשיו</span>`; return; }
+  const next = cache().days.find(k => k > todayKey());
+  if (next) { const diff = Math.round((dOf(next) - dOf(todayKey())) / 864e5); el.innerHTML = `<b>${diff}</b><span>ימים ליום מילואים הבא (${short(next)})</span>`; }
+  else el.innerHTML = `<span>סד״כ ${activeSoldiers().length}</span>`;
+}
+
+function viewCal() {
+  const { days, info } = cache();
+  if (!activeSoldiers().length && !days.length) return emptyState();
+  const tk = todayKey();
+  const done = days.filter(k => k < tk).length;
+  const lows = days.filter(k => info.get(k).min < Number(settings().minStrength)).length;
+  let out = `<div class="strip">
+    <div class="stat"><b>${activeSoldiers().length}</b><span>סד״כ</span></div>
+    <div class="stat"><b>${days.length}</b><span>ימי מילואים${done ? ` · עברו ${done}` : ""}</span></div>
+    <div class="stat"><b style="color:var(${lows ? "--bad" : "--ok"})">${lows}</b><span>ימים מתחת ל־${esc(settings().minStrength)}</span></div>
+  </div>`;
+  if (!days.length) return out + `<div class="panel empty">עוד לא הוגדרו ימי מילואים. אפשר להוסיף אותם במסך ההגדרות.</div>`;
+  const months = [...new Set(days.map(k => k.slice(0, 7)))];
+  for (const m of months) {
+    const [y, mo] = m.split("-").map(Number);
+    const first = new Date(y, mo - 1, 1), count = new Date(y, mo, 0).getDate();
+    let cells = DOW.map(d => `<div class="dow">${d}</div>`).join("");
+    for (let i = 0; i < first.getDay(); i++) cells += `<div class="cell blank"></div>`;
+    for (let d = 1; d <= count; d++) {
+      const k = `${m}-${pad(d)}`, inf = info.get(k), today = k === tk ? " today" : "";
+      if (inf) cells += `<button class="cell res${today}" data-day="${k}" aria-label="${longDate(k)}: ${inf.min} מתוך ${inf.total}">
+          <span>${d}</span><span class="cnt ${statusCls(inf.min)}">${inf.min}<small>/${inf.total}</small></span>${inf.hasPartial ? `<span class="partial">שעות</span>` : ""}</button>`;
+      else cells += `<div class="cell${today}">${d}</div>`;
+    }
+    out += `<section class="month"><h2>${MONTHS[mo - 1]} ${y}</h2><div class="grid">${cells}</div></section>`;
+  }
+  out += `<div class="legend"><span><i style="background:var(--ok-bg);border:1px solid var(--ok)"></i>מעל המינימום</span><span><i style="background:var(--warn-bg);border:1px solid var(--warn)"></i>בדיוק במינימום</span><span><i style="background:var(--bad-bg);border:1px solid var(--bad)"></i>מתחת למינימום</span><span>המספר הוא הנוכחות הנמוכה ביותר באותו יום · "שעות" = יש יציאה לפי שעות</span></div>`;
+  return out;
+}
+function emptyState() {
+  return `<div class="panel empty"><h2>עוד אין לוחמים במערכת</h2><p>מוסיפים לוחמים וימי מילואים במסך ההגדרות, ואז הלוח מתמלא.</p><button class="btn primary" data-tab="settings">להגדרות</button></div>`;
+}
+
+function viewDay() {
+  const { days, info } = cache();
+  const inf = info.get(S.day);
+  if (!inf) { S.tab = "cal"; return viewCal(); }
+  const i = days.indexOf(S.day);
+  const prev = days[i - 1], next = days[i + 1];
+  const groups = { home: [], course: [], nir: [] };
+  inf.per.forEach(p => { if (p.full) groups[p.full.type].push(p); });
+  const partial = inf.per.filter(p => p.partial.length);
+  const present = inf.per.filter(p => !p.full);
+  const span = inf.s1 - inf.s0;
+  const tl = inf.segs.map(s => `<div class="${statusCls(s.n)}" style="width:${((s.t1 - s.t0) / span * 100).toFixed(2)}%" title="${hm(s.t0)}–${s.t1 === inf.s1 ? "24:00" : hm(s.t1)}">${s.n}</div>`).join("");
+  const segList = inf.segs.length > 1 ? `<div class="seglist">${inf.segs.map(s => `<div><span class="num">${span2(hm(s.t0), s.t1 === inf.s1 ? "24:00" : hm(s.t1))}</span><b class="num">${s.n}/${inf.total}</b></div>`).join("")}</div>` : "";
+  const item = (p, a, extra = "") => `<li class="item"><div style="min-width:0"><div class="who">${esc(p.sol.name)} ${extra}</div><div class="meta">${esc(reasonText(a)) || "&nbsp;"} · ${esc(absRangeText(a))}</div></div><button class="btn small ghost" data-edit="${a.id}">עריכה</button></li>`;
+  const sec = (t, arr) => arr.length ? `<div class="panel"><div class="row"><h2>${TYPES[t]}</h2><span class="chip ${TYPE_CLS[t]}">${arr.length}</span></div><ul class="list">${arr.map(p => item(p, p.full)).join("")}</ul></div>` : "";
+  const clip = (a) => span2(hm(Math.max(inf.s0, ms(a.start))), Math.min(inf.s1, ms(a.end)) === inf.s1 ? "24:00" : hm(ms(a.end)));
+  const partSec = partial.length ? `<div class="panel"><div class="row"><h2>יציאות לפי שעות</h2><span class="chip c-home">${partial.length}</span></div><ul class="list">${partial.flatMap(p => p.partial.map(a => item(p, a, `<span class="chip ${TYPE_CLS[a.type]}">${clip(a)}</span>`))).join("")}</ul></div>` : "";
+  return `
+  <div class="panel">
+    <div class="dayhead">
+      <button class="btn small" ${prev ? `data-day="${prev}"` : "disabled"} aria-label="יום קודם">→</button>
+      <h2>${longDate(S.day)}</h2>
+      <button class="btn small" ${next ? `data-day="${next}"` : "disabled"} aria-label="יום הבא">←</button>
+    </div>
+    <div class="row"><span class="eyebrow">יום מילואים ${i + 1} מתוך ${days.length}</span><button class="btn small ghost" data-tab="cal">חזרה ללוח</button></div>
+    <div class="big"><b class="${statusCls(inf.min)}">${inf.min}/${inf.total}</b><span>${inf.hasPartial ? "הנוכחות הנמוכה ביותר במהלך היום" : "נוכחים כל היום"} · מינימום נדרש ${esc(settings().minStrength)}</span></div>
+    <div><div class="timeline" aria-label="נוכחות לאורך היום">${tl}</div><div class="ticks"><span>00</span><span>06</span><span>12</span><span>18</span><span>24</span></div></div>
+    ${segList}
+    <div class="actions"><button class="btn primary" data-act="new" data-date="${S.day}">+ יציאה ביום הזה</button><button class="btn" data-act="copy">העתקת סיכום לוואטסאפ</button></div>
+    ${S.copyText != null ? `<div class="field"><label for="copybox">ההעתקה האוטומטית לא עבדה. סמנו את הטקסט והעתיקו ידנית:</label><textarea id="copybox" class="copybox" readonly>${esc(S.copyText)}</textarea></div>` : ""}
+  </div>
+  ${sec("home", groups.home)}${partSec}${sec("course", groups.course)}${sec("nir", groups.nir)}
+  <div class="panel"><div class="row"><h2>נוכחים</h2><span class="chip c-present">${present.length}</span></div>
+    <div class="names">${present.map(p => `<span>${esc(p.sol.name)}${p.partial.length ? " ⏱" : ""}</span>`).join("") || `<span class="muted">אין</span>`}</div></div>`;
+}
+
+function whatsappText(key) {
+  const inf = cache().info.get(key);
+  const d = dOf(key);
+  const L = [`*מצב כוח אדם – יום ${DOW[d.getDay()]} ${short(key)}*`, `סד״כ: ${inf.min}/${inf.total}`];
+  if (inf.segs.length > 1) L.push("לפי שעות: " + inf.segs.map(s => `${span2(hm(s.t0), s.t1 === inf.s1 ? "24:00" : hm(s.t1))}: ${s.n}`).join(" | "));
+  for (const t of ["home", "course", "nir"]) {
+    const arr = inf.per.filter(p => p.full && p.full.type === t);
+    if (arr.length) { L.push("", `${TYPES[t]} (${arr.length}):`); arr.forEach(p => L.push(`• ${p.sol.name}${reasonText(p.full) ? " – " + reasonText(p.full) : ""}`)); }
+  }
+  const part = inf.per.filter(p => p.partial.length);
+  if (part.length) {
+    L.push("", `יציאות לפי שעות (${part.length}):`);
+    part.forEach(p => p.partial.forEach(a => L.push(`• ${p.sol.name} ${span2(hm(Math.max(inf.s0, ms(a.start))), Math.min(inf.s1, ms(a.end)) === inf.s1 ? "24:00" : hm(ms(a.end)))}${reasonText(a) ? " – " + reasonText(a) : ""}`)));
+  }
+  const present = inf.per.filter(p => !p.full);
+  L.push("", `נוכחים (${present.length}): ${present.map(p => p.sol.name).join(", ")}`);
+  return L.join("\n");
+}
+
+function viewSoldiers() {
+  const list = activeSoldiers().map(s => ({ s, st: soldierStats(s.id) }));
+  if (!list.length) return emptyState();
+  if (S.sort === "out") list.sort((a, b) => (b.st.home - a.st.home) || (b.st.partial - a.st.partial) || a.s.name.localeCompare(b.s.name, "he"));
+  else list.sort((a, b) => (a.s.order ?? 0) - (b.s.order ?? 0));
+  const days = cache().days.length || 1;
+  const avg = list.reduce((n, x) => n + x.st.home, 0) / list.length;
+  const rows = list.map(({ s, st }) => `<button class="srow" data-soldier="${s.id}">
+      <span class="who" style="font-weight:700;overflow-wrap:anywhere">${esc(s.name)}</span>
+      <span class="bar" aria-hidden="true"><i style="width:${st.home / days * 100}%;background:var(--home)"></i><i style="width:${st.course / days * 100}%;background:var(--course)"></i><i style="width:${st.nir / days * 100}%;background:var(--nir)"></i></span>
+      <span class="n">${st.home} ימי בית${st.course ? ` · ${st.course} קורס` : ""}${st.partial ? ` · ${st.partial} בשעות` : ""}</span></button>`).join("");
+  return `<div class="panel"><div class="row"><h2>יציאות לפי לוחם</h2>
+      <div class="seg" role="group" aria-label="מיון"><button data-sort="out" aria-pressed="${S.sort === "out"}">הכי הרבה בבית</button><button data-sort="name" aria-pressed="${S.sort === "name"}">לפי הרשימה</button></div></div>
+      <div class="muted" style="font-size:.88rem">ממוצע לצוות: <b class="num">${avg.toFixed(1)}</b> ימי בית ללוחם מתוך ${cache().days.length} ימי מילואים. נספרים רק ימי מילואים.</div>
+      <div class="legend"><span><i style="background:var(--home)"></i>בבית</span><span><i style="background:var(--course)"></i>קורס</span><span><i style="background:var(--nir)"></i>לא במילואים</span></div>
+    </div><div class="list">${rows}</div>`;
+}
+
+function viewSoldier() {
+  const s = S.soldiers.find(x => x.id === S.soldier);
+  if (!s) { S.tab = "soldiers"; return viewSoldiers(); }
+  const st = soldierStats(s.id);
+  const abs = S.absences.filter(a => a.soldierId === s.id).sort((a, b) => ms(a.start) - ms(b.start));
+  const items = abs.map(a => `<li class="item"><div style="min-width:0"><div class="who"><span class="chip ${TYPE_CLS[a.type]}">${TYPES[a.type]}</span> ${esc(absRangeText(a))}</div>
+      <div class="meta">${a.allDay ? `${absDays(a)} ימי מילואים` : "לפי שעות"}${reasonText(a) ? " · " + esc(reasonText(a)) : ""}</div></div><button class="btn small ghost" data-edit="${a.id}">עריכה</button></li>`).join("");
+  return `<div class="panel">
+    <div class="row"><h2 style="font-size:1.3rem">${esc(s.name)}</h2><button class="btn small ghost" data-tab="soldiers">חזרה לרשימה</button></div>
+    <div class="tiles">
+      <div class="stat"><b>${st.present}</b><span>ימים נוכח</span></div>
+      <div class="stat"><b style="color:var(--home)">${st.home}</b><span>ימים בבית</span></div>
+      <div class="stat"><b style="color:var(--course)">${st.course}</b><span>ימי קורס</span></div>
+      <div class="stat"><b>${st.partial}</b><span>ימים עם יציאה בשעות</span></div>
+    </div>
+    ${st.nir ? `<div class="muted">לא במילואים: ${st.nir} ימים</div>` : ""}
+    <button class="btn primary" data-act="new" data-soldier-id="${s.id}">+ יציאה ל${esc(s.name)}</button>
+  </div>
+  <div class="panel"><h2>כל היציאות וההיעדרויות</h2>${items ? `<ul class="list">${items}</ul>` : `<div class="empty">עוד אין יציאות רשומות ל${esc(s.name)}.</div>`}</div>`;
+}
+
+function viewSettings() {
+  const st = settings();
+  const ranges = (st.reserveRanges || []).map((r, i) => `<div class="rangerow">
+      <div class="field"><label for="rf${i}">מתאריך</label><input type="date" id="rf${i}" value="${r.from}" data-range="${i}" data-k="from"></div>
+      <div class="field"><label for="rt${i}">עד תאריך</label><input type="date" id="rt${i}" value="${r.to}" data-range="${i}" data-k="to"></div>
+      <button class="btn small danger" data-delrange="${i}" aria-label="מחיקת טווח">מחיקה</button></div>`).join("");
+  const sol = [...S.soldiers].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  const act = sol.filter(s => s.active !== false), inact = sol.filter(s => s.active === false);
+  return `<div class="panel"><h2>מינימום נוכחים</h2>
+      <div class="setrow"><input class="inp num" type="number" min="0" id="minStrength" value="${esc(st.minStrength)}" aria-label="מינימום נוכחים"><span class="muted">מתחת למספר הזה היום נצבע באדום</span></div></div>
+    <div class="panel"><div class="row"><h2>ימי מילואים</h2><span class="chip c-present">${reserveDays().length} ימים</span></div>${ranges || `<div class="muted">אין טווחים.</div>`}
+      <button class="btn" data-act="addrange">+ טווח תאריכים</button></div>
+    <div class="panel"><div class="row"><h2>לוחמים</h2><span class="chip c-present">סד״כ ${act.length}</span></div>
+      <ul class="list">${act.map(s => `<li class="setrow"><input class="inp" id="sn-${s.id}" value="${esc(s.name)}" data-rename="${s.id}" aria-label="שם הלוחם"><button class="btn small danger" data-deact="${s.id}">הסרה</button></li>`).join("")}</ul>
+      <form class="setrow" id="addSoldier"><input class="inp" id="newSoldier" placeholder="שם לוחם חדש" aria-label="שם לוחם חדש"><button class="btn primary small">הוספה</button></form>
+      ${inact.length ? `<div class="lbl">הוסרו (ההיסטוריה שלהם נשמרת)</div><ul class="list">${inact.map(s => `<li class="item"><span>${esc(s.name)}</span><button class="btn small" data-react="${s.id}">החזרה</button></li>`).join("")}</ul>` : ""}
+    </div>`;
+}
+
+/* ---------- absence form ---------- */
+const modal = document.getElementById("modal");
+let form = null;
+function openForm(opts) {
+  const a = opts.id ? S.absences.find(x => x.id === opts.id) : null;
+  const date = opts.date || (cache().days.find(k => k >= todayKey()) || todayKey());
+  form = a ? {
+    id: a.id, soldierId: a.soldierId, type: a.type, reason: a.reason || "יציאה", note: a.note || "", allDay: !!a.allDay,
+    fromDate: a.start.slice(0, 10), toDate: a.allDay ? addDays(a.end.slice(0, 10), -1) : a.end.slice(0, 10),
+    fromTime: a.allDay ? "14:00" : a.start.slice(11), toTime: a.allDay ? "22:00" : a.end.slice(11), confirmDel: false, err: ""
+  } : { id: null, soldierId: opts.soldierId || "", type: "home", reason: "יציאה", note: "", allDay: true, fromDate: date, toDate: date, fromTime: "14:00", toTime: "22:00", confirmDel: false, err: "" };
+  drawForm();
+}
+function drawForm() {
+  if (!form) { modal.innerHTML = ""; return; }
+  const f = form;
+  const opts = activeSoldiers().map(s => `<option value="${s.id}" ${s.id === f.soldierId ? "selected" : ""}>${esc(s.name)}</option>`).join("");
+  modal.innerHTML = `<div class="overlay" data-act="close"><form class="sheet" id="absForm" role="dialog" aria-modal="true" aria-labelledby="ftitle">
+    <div class="row"><h2 id="ftitle">${f.id ? "עריכת" : "הוספת"} יציאה / היעדרות</h2><button type="button" class="btn small ghost" data-act="close">סגירה</button></div>
+    <div class="field"><label for="fSoldier">לוחם</label><select id="fSoldier" required><option value="">בחירת לוחם…</option>${opts}</select></div>
+    <div class="field"><span class="lbl">סטטוס</span><div class="seg" role="group">${Object.entries(TYPES).map(([k, v]) => `<button type="button" data-ftype="${k}" aria-pressed="${f.type === k}">${v}</button>`).join("")}</div></div>
+    ${f.type === "home" ? `<div class="field"><span class="lbl">סיבה</span><div class="seg" role="group" style="flex-wrap:wrap">${REASONS.map(r => `<button type="button" data-freason="${r}" aria-pressed="${f.reason === r}">${r}</button>`).join("")}</div></div>` : ""}
+    <div class="field"><span class="lbl">משך</span><div class="seg" role="group"><button type="button" data-fall="1" aria-pressed="${f.allDay}">ימים שלמים</button><button type="button" data-fall="0" aria-pressed="${!f.allDay}">לפי שעות</button></div></div>
+    <div class="two">
+      <div class="field"><label for="fFrom">${f.allDay ? "מתאריך" : "יציאה בתאריך"}</label><input type="date" id="fFrom" value="${f.fromDate}" required></div>
+      <div class="field"><label for="fTo">${f.allDay ? "עד תאריך (כולל)" : "חזרה בתאריך"}</label><input type="date" id="fTo" value="${f.toDate}" required></div>
+      ${f.allDay ? "" : `<div class="field"><label for="fFromT">שעת יציאה</label><input type="time" id="fFromT" value="${f.fromTime}" required></div>
+      <div class="field"><label for="fToT">שעת חזרה</label><input type="time" id="fToT" value="${f.toTime}" required></div>`}
+    </div>
+    <div class="field"><label for="fNote">הערה</label><input id="fNote" value="${esc(f.note)}" placeholder="לא חובה"></div>
+    ${f.err ? `<div class="err" role="alert">${esc(f.err)}</div>` : ""}
+    <div class="actions"><button class="btn primary" type="submit">שמירה</button>
+      ${f.id ? `<button type="button" class="btn danger" data-act="del">${f.confirmDel ? "בטוח? למחוק" : "מחיקה"}</button>` : ""}</div>
+  </form></div>`;
+}
+function readForm() {
+  if (!form) return;
+  const g = id => document.getElementById(id);
+  form.soldierId = g("fSoldier").value; form.fromDate = g("fFrom").value; form.toDate = g("fTo").value; form.note = g("fNote").value.trim();
+  if (g("fFromT")) { form.fromTime = g("fFromT").value; form.toTime = g("fToT").value; }
+}
+async function saveForm() {
+  readForm();
+  const f = form;
+  if (!f.soldierId) { f.err = "צריך לבחור לוחם."; return drawForm(); }
+  if (!f.fromDate || !f.toDate) { f.err = "צריך למלא תאריכים."; return drawForm(); }
+  const start = f.allDay ? `${f.fromDate}T00:00` : `${f.fromDate}T${f.fromTime}`;
+  const end = f.allDay ? `${addDays(f.toDate, 1)}T00:00` : `${f.toDate}T${f.toTime}`;
+  if (ms(end) <= ms(start)) { f.err = "מועד החזרה צריך להיות אחרי מועד היציאה."; return drawForm(); }
+  const doc = { soldierId: f.soldierId, type: f.type, reason: f.type === "home" ? f.reason : "", note: f.note, allDay: f.allDay, start, end, updatedAt: new Date().toISOString() };
+  const id = f.id || uid("a");
+  try { await write(db.collection("absences").doc(id), "set", doc); form = null; drawForm(); toast("נשמר"); }
+  catch (e) { f.err = writeError(e); drawForm(); }
+}
+
+/* ---------- writes ---------- */
+async function write(ref, op, data) {
+  if (!db) throw { code: "not_granted" };
+  try { return await ref[op](data); }
+  catch (e) { if (e && e.code === "unavailable") { await new Promise(r => setTimeout(r, 600 + Math.random() * 800)); return await ref[op](data); } throw e; }
+}
+function writeError(e) {
+  const c = e && e.code;
+  if (c === "not_granted" || c === "capability_disabled") return "אין חיבור למאגר הנתונים בתצוגה הזו, ולכן אי אפשר לשמור.";
+  if (c === "invalid_argument") return "אין הרשאת עריכה, או שהנתונים לא תקינים.";
+  if (c === "quota_exceeded") return "המאגר מלא. צריך למחוק רשומות ישנות.";
+  return "השמירה נכשלה. נסו שוב בעוד רגע.";
+}
+async function saveSettings(patch) {
+  const next = { ...settings(), ...patch };
+  try { await write(db.doc("settings/main"), "set", next); toast("נשמר"); } catch (e) { toast(writeError(e)); }
+}
+let toastT;
+function toast(msg) { const t = document.getElementById("toast"); t.textContent = msg; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => t.hidden = true, 2200); }
+
+/* ---------- events ---------- */
+document.addEventListener("click", async e => {
+  const el = e.target.closest("button, [data-act='close']");
+  if (!el) return;
+  const d = el.dataset;
+  if (d.act === "close" && e.target !== el && el.classList.contains("overlay")) return; // click inside sheet
+  if (d.tab) { S.tab = d.tab; S.copyText = null; render(); window.scrollTo(0, 0); return; }
+  if (d.day) { S.day = d.day; S.tab = "day"; S.copyText = null; render(); window.scrollTo(0, 0); return; }
+  if (d.soldier) { S.soldier = d.soldier; S.tab = "soldier"; render(); window.scrollTo(0, 0); return; }
+  if (d.sort) { S.sort = d.sort; render(); return; }
+  if (d.edit) { openForm({ id: d.edit }); return; }
+  if (d.act === "new") { openForm({ date: d.date || (S.tab === "day" ? S.day : null), soldierId: d.soldierId || (S.tab === "soldier" ? S.soldier : "") }); return; }
+  if (d.act === "close") { form = null; drawForm(); return; }
+  if (d.ftype) { readForm(); form.type = d.ftype; drawForm(); return; }
+  if (d.freason) { readForm(); form.reason = d.freason; drawForm(); return; }
+  if (d.fall) { readForm(); form.allDay = d.fall === "1"; drawForm(); return; }
+  if (d.act === "del") {
+    if (!form.confirmDel) { readForm(); form.confirmDel = true; drawForm(); return; }
+    try { await write(db.collection("absences").doc(form.id), "delete"); form = null; drawForm(); toast("נמחק"); } catch (err) { form.err = writeError(err); drawForm(); }
+    return;
+  }
+  if (d.act === "copy") {
+    const text = whatsappText(S.day);
+    try { await navigator.clipboard.writeText(text); S.copyText = null; toast("הסיכום הועתק"); }
+    catch { S.copyText = text; render(); const b = document.getElementById("copybox"); if (b) { b.focus(); b.select(); } }
+    return;
+  }
+  if (d.act === "addrange") { const r = settings().reserveRanges || []; const last = r[r.length - 1]; const from = last ? addDays(last.to, 1) : todayKey(); saveSettings({ reserveRanges: [...r, { from, to: from }] }); return; }
+  if (d.delrange != null) { const r = [...(settings().reserveRanges || [])]; r.splice(Number(d.delrange), 1); saveSettings({ reserveRanges: r }); return; }
+  if (d.deact) { try { await write(db.collection("soldiers").doc(d.deact), "update", { active: false }); toast("הלוחם הוסר מהסד״כ"); } catch (err) { toast(writeError(err)); } return; }
+  if (d.react) { try { await write(db.collection("soldiers").doc(d.react), "update", { active: true }); toast("הלוחם הוחזר"); } catch (err) { toast(writeError(err)); } return; }
+});
+document.addEventListener("submit", async e => {
+  e.preventDefault();
+  if (e.target.id === "absForm") return saveForm();
+  if (e.target.id === "addSoldier") {
+    const inp = document.getElementById("newSoldier"); const name = inp.value.trim(); if (!name) return;
+    const order = Math.max(0, ...S.soldiers.map(s => s.order ?? 0)) + 1;
+    try { await write(db.collection("soldiers").doc(uid("s")), "set", { name, active: true, order }); toast("נוסף"); } catch (err) { toast(writeError(err)); }
+  }
+});
+document.addEventListener("change", async e => {
+  const t = e.target;
+  if (t.id === "minStrength") { const v = Math.max(0, parseInt(t.value, 10) || 0); saveSettings({ minStrength: v }); return; }
+  if (t.dataset.range != null) {
+    const r = (settings().reserveRanges || []).map(x => ({ ...x })); const i = Number(t.dataset.range);
+    r[i][t.dataset.k] = t.value; if (r[i].to < r[i].from) r[i].to = r[i].from;
+    r.sort((a, b) => a.from.localeCompare(b.from)); saveSettings({ reserveRanges: r }); return;
+  }
+  if (t.dataset.rename) { const name = t.value.trim(); if (!name) return; try { await write(db.collection("soldiers").doc(t.dataset.rename), "update", { name }); toast("נשמר"); } catch (err) { toast(writeError(err)); } }
+});
+document.addEventListener("keydown", e => { if (e.key === "Escape" && form) { form = null; drawForm(); } });
+
+/* ---------- data ---------- */
+function onData() { S.cache = null; if (S.notice === "loading") S.notice = ""; render(); }
+function onErr() { S.notice = "החיבור למאגר הנתונים נקטע. רעננו את הדף."; clearTimeout(loadTimer); render(); }
+let loadTimer;
+async function init() {
+  render();
+  loadTimer = setTimeout(() => { if (!(S.loaded.soldiers && S.loaded.absences && S.loaded.settings)) { S.notice = "לא ניתן להגיע לנתונים כרגע. ייתכן שאין חיבור לרשת; הנתונים יופיעו ברגע שהחיבור יחזור."; render(); } }, 10000);
+  if (!window.claude || !window.claude.use) { clearTimeout(loadTimer); S.notice = "המאגר זמין רק כשפותחים את הדף ב־claude.ai."; render(); return; }
+  db = await window.claude.use("db");
+  if (!db) { clearTimeout(loadTimer); S.notice = "אין גישה למאגר הנתונים בתצוגה הזו. צריך להיות מחובר ל־claude.ai."; render(); return; }
+  const fresh = () => { if (S.loaded.soldiers && S.loaded.absences && S.loaded.settings) { clearTimeout(loadTimer); if (S.notice.startsWith("לא ניתן להגיע")) S.notice = ""; } };
+  db.collection("soldiers").onSnapshot(snap => { S.soldiers = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (a.order ?? 0) - (b.order ?? 0)); if (!snap.metadata.fromCache) S.loaded.soldiers = true; fresh(); onData(); }, onErr);
+  db.collection("absences").onSnapshot(snap => { S.absences = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(a => a.start && a.end && TYPES[a.type]); if (!snap.metadata.fromCache) S.loaded.absences = true; fresh(); onData(); }, onErr);
+  db.doc("settings/main").onSnapshot(snap => { S.settings = snap.exists ? snap.data() : null; if (!snap.metadata.fromCache) S.loaded.settings = true; fresh(); onData(); }, onErr);
+}
+init();
+</script>

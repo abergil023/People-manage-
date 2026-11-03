@@ -64,7 +64,7 @@ main { max-width: 760px; margin: 0 auto; padding-left: max(16px, env(safe-area-i
 /* tabs */
 .tabs { position: fixed; inset: auto 0 0 0; z-index: 6; background: var(--surface); border-top: 1px solid var(--line);
   padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 8px calc(8px + env(safe-area-inset-bottom, 0px)); }
-.tabs-in { max-width: 760px; margin: 0 auto; display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.tabs-in { max-width: 760px; margin: 0 auto; display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
 .tab { border: 0; background: transparent; padding: 8px 4px; border-radius: 10px; font-weight: 700; color: var(--muted); }
 .tab[aria-current="page"] { background: var(--surface-2); color: var(--ink); }
 
@@ -159,6 +159,10 @@ h2 { font-family: var(--f-display); font-size: 1.05rem; font-weight: 600; margin
 .empty { text-align: center; color: var(--muted); padding: 20px 8px; }
 @media (max-width: 420px) { .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } .srow { grid-template-columns: minmax(0, 5.5rem) minmax(0, 1fr) auto; } .cell { min-height: 56px; } .cell.res .cnt { font-size: .9rem; padding: 1px 3px; } }
 @media (prefers-reduced-motion: no-preference) { .sheet { animation: up .18s ease-out; } @keyframes up { from { transform: translateY(16px); opacity: .6; } } }
+.reportbox { white-space: pre-wrap; margin: 0; background: var(--surface-2); border-radius: 10px; padding: 12px; font-family: var(--f-body); font-size: .98rem; line-height: 1.6; overflow-wrap: anywhere; }
+a.btn { text-decoration: none; display: inline-block; text-align: center; }
+.btn.wa { background: var(--ok); border-color: var(--ok); color: var(--surface); }
+.gcal { display: grid; gap: 6px; }
 </style>
 
 <header class="top"><div class="top-in">
@@ -173,6 +177,7 @@ h2 { font-family: var(--f-display); font-size: 1.05rem; font-weight: 600; margin
 <nav class="tabs" aria-label="ניווט"><div class="tabs-in">
   <button class="tab" data-tab="cal">לוח</button>
   <button class="tab" data-tab="soldiers">לוחמים</button>
+  <button class="tab" data-tab="report">דוח 1</button>
   <button class="tab" data-tab="settings">הגדרות</button>
 </div></nav>
 
@@ -274,6 +279,8 @@ function absDays(a) { let n = 0; for (const k of cache().days) { if (ms(a.start)
 const nameOf = id => (S.soldiers.find(s => s.id === id) || {}).name || "לוחם שהוסר";
 const reasonText = a => a.type === "home" ? [a.reason, a.note].filter(Boolean).join(" · ") : (a.note || "");
 
+function reportTitleSuffix() { return ""; }
+function reportTimes() { return ["10:00", "20:00"]; }
 /* ---------- render ---------- */
 const app = document.getElementById("app");
 function render() {
@@ -287,6 +294,7 @@ function render() {
   else if (S.tab === "soldiers") body = viewSoldiers();
   else if (S.tab === "soldier") body = viewSoldier();
   else if (S.tab === "settings") body = viewSettings();
+  else if (S.tab === "report") body = viewReport();
   else body = viewCal();
   app.innerHTML = notice + body;
 }
@@ -361,7 +369,7 @@ function viewDay() {
     <div class="big"><b class="${statusCls(inf.min)}">${inf.min}/${inf.total}</b><span>${inf.hasPartial ? "הנוכחות הנמוכה ביותר במהלך היום" : "נוכחים כל היום"} · מינימום נדרש ${esc(settings().minStrength)}</span></div>
     <div><div class="timeline" aria-label="נוכחות לאורך היום">${tl}</div><div class="ticks"><span>00</span><span>06</span><span>12</span><span>18</span><span>24</span></div></div>
     ${segList}
-    <div class="actions"><button class="btn primary" data-act="new" data-date="${S.day}">+ יציאה ביום הזה</button><button class="btn" data-act="copy">העתקת סיכום לוואטסאפ</button></div>
+    <div class="actions"><button class="btn primary" data-act="new" data-date="${S.day}">+ יציאה ביום הזה</button><button class="btn" data-act="copy">העתקת סיכום לוואטסאפ</button><button class="btn" data-tab="report">דיווח דוח 1</button></div>
     ${S.copyText != null ? `<div class="field"><label for="copybox">ההעתקה האוטומטית לא עבדה. סמנו את הטקסט והעתיקו ידנית:</label><textarea id="copybox" class="copybox" readonly>${esc(S.copyText)}</textarea></div>` : ""}
   </div>
   ${sec("home", groups.home)}${partSec}${sec("course", groups.course)}${sec("nir", groups.nir)}
@@ -527,7 +535,7 @@ document.addEventListener("click", async e => {
   if (!el) return;
   const d = el.dataset;
   if (d.act === "close" && e.target !== el && el.classList.contains("overlay")) return; // click inside sheet
-  if (d.tab) { S.tab = d.tab; S.copyText = null; render(); window.scrollTo(0, 0); return; }
+  if (d.tab) { if (location.hash === "#report" && d.tab !== "report") location.hash = ""; S.tab = d.tab; S.copyText = null; render(); window.scrollTo(0, 0); return; }
   if (d.day) { S.day = d.day; S.tab = "day"; S.copyText = null; render(); window.scrollTo(0, 0); return; }
   if (d.soldier) { S.soldier = d.soldier; S.tab = "soldier"; render(); window.scrollTo(0, 0); return; }
   if (d.sort) { S.sort = d.sort; render(); return; }
@@ -589,5 +597,65 @@ async function init() {
   db.collection("absences").onSnapshot(snap => { S.absences = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(a => a.start && a.end && TYPES[a.type]); if (!snap.metadata.fromCache) S.loaded.absences = true; fresh(); onData(); }, onErr);
   db.doc("settings/main").onSnapshot(snap => { S.settings = snap.exists ? snap.data() : null; if (!snap.metadata.fromCache) S.loaded.settings = true; fresh(); onData(); }, onErr);
 }
+
+/* ---------- attendance report ---------- */
+function reportAt(t) {
+  const key = keyOf(new Date(t)); const info = cache().info.get(key);
+  if (!info) return null;
+  const missing = [];
+  for (const p of info.per) {
+    const a = p.full || p.partial.find(x => ms(x.start) <= t && ms(x.end) > t);
+    if (!a) continue;
+    let text;
+    if (a.type === "course") text = "קורס";
+    else if (a.type === "nir") text = "לא במילואים";
+    else {
+      const endKey = a.end.slice(0, 10), why = [a.reason, a.note].filter(Boolean).join(", ");
+      text = p.full ? "בבית" : `בבית עד ${endKey === key ? a.end.slice(11) : short(endKey) + " " + a.end.slice(11)}`;
+      if (why) text += ` (${why})`;
+    }
+    missing.push({ name: p.sol.name, text });
+  }
+  return { key, t, total: info.total, present: info.total - missing.length, missing };
+}
+function reportText(r) {
+  const d = new Date(r.t);
+  const L = [`דיווח נוכחות${reportTitleSuffix()}`, `יום ${DOW[d.getDay()]} ${short(r.key)} · ${hm(r.t)}`, `נוכחים: ${r.present}/${r.total}`];
+  if (!r.missing.length) L.push("לא נוכחים: אין");
+  else { L.push("לא נוכחים:"); r.missing.forEach((m, i) => L.push(`${i + 1}. ${m.name} – ${m.text}`)); }
+  return L.join("\n");
+}
+function viewReport() {
+  const mode = S.repMode || "now";
+  const tk = todayKey();
+  const t = mode === "now" ? Math.floor(Date.now() / 60000) * 60000 : ms(`${tk}T${mode}`);
+  const seg = `<div class="seg" role="group" aria-label="שעת הדיווח">${["now", ...reportTimes()].map(m => `<button type="button" data-rmode="${m}" aria-pressed="${mode === m}">${m === "now" ? "עכשיו" : m}</button>`).join("")}</div>`;
+  const r = reportAt(t);
+  if (!r) {
+    const next = cache().days.find(k => k > tk);
+    return `<div class="panel"><div class="row"><h2>דיווח דוח 1</h2>${seg}</div><div class="empty">היום לא יום מילואים, אז אין דיווח.${next ? `<br>יום המילואים הבא: ${longDate(next)}.` : ""}</div></div>`;
+  }
+  const text = reportText(r);
+  S.reportCache = text;
+  return `<div class="panel">
+    <div class="row"><h2>דיווח דוח 1</h2>${seg}</div>
+    <div class="big"><b class="${statusCls(r.present)}">${r.present}/${r.total}</b><span>נוכחים ב־${hm(r.t)} · ${longDate(r.key)}</span></div>
+    <pre class="reportbox" id="reportbox">${esc(text)}</pre>
+    <div class="actions"><a class="btn wa" href="https://wa.me/?text=${encodeURIComponent(text)}" target="_blank" rel="noopener">שליחה בוואטסאפ</a><button class="btn" data-act="copyreport">העתקה</button></div>
+    <div class="muted" style="font-size:.85rem">"שליחה בוואטסאפ" פותח את וואטסאפ עם הדיווח מוכן. בוחרים למי לשלוח (אדם או קבוצה) ולוחצים שלח.</div>
+  </div>`;
+}
+document.addEventListener("click", async e => {
+  const el = e.target.closest("button"); if (!el) return;
+  if (el.dataset.rmode) { S.repMode = el.dataset.rmode; render(); return; }
+  if (el.dataset.act === "copyreport") {
+    try { await navigator.clipboard.writeText(S.reportCache || ""); toast("הדיווח הועתק"); }
+    catch { const b = document.getElementById("reportbox"); if (b) { const rg = document.createRange(); rg.selectNodeContents(b); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(rg); } toast("סמנו והעתיקו ידנית"); }
+  }
+});
+function routeHash() { if (location.hash === "#report") { S.tab = "report"; S.repMode = "now"; render(); window.scrollTo(0, 0); } }
+window.addEventListener("hashchange", routeHash);
+if (location.hash === "#report") { S.tab = "report"; }
+
 init();
 </script>

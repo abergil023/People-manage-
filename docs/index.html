@@ -207,8 +207,18 @@ body.nowiz .sticky-actions { bottom: env(safe-area-inset-bottom, 0px); }
 <div id="modal"></div>
 <div id="toast" class="toast" hidden></div>
 
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script>
 "use strict";
+/* ---------- Firebase project config (public values, safe to commit) ---------- */
+const FIREBASE_CONFIG = {
+  apiKey: "",
+  authDomain: "",
+  projectId: "",
+  appId: ""
+};
 /* ---------- constants ---------- */
 const TYPES = { home: "בבית", course: "קורס", nir: "לא במילואים" };
 const TYPE_CLS = { home: "c-home", course: "c-course", nir: "c-nir" };
@@ -223,7 +233,8 @@ const S = {
   team: null, soldiers: [], absences: [], settings: { reserveDays: [], minStrength: 15 }, lastBackup: null,
   tab: "cal", day: null, soldier: null, sort: "out",
   notice: "", cache: null, copyText: null,
-  wiz: null, pick: null, backupCode: null, restore: null, restoreErr: "", resetStep: 0
+  wiz: null, pick: null, backupCode: null, restore: null, restoreErr: "", resetStep: 0,
+  auth: "loading", user: null, cloudReady: false, loginErr: "", localFound: null
 };
 
 /* ---------- date helpers (all local time) ---------- */
@@ -304,13 +315,15 @@ function render() {
   renderNow();
   const notice = S.notice ? `<div class="notice">${esc(S.notice)}</div>` : "";
   let body;
-  if (!S.team) body = viewWizard();
+  if (S.auth !== "in") body = viewLogin();
+  else if (!S.cloudReady) body = `<div class="empty">טוען את הנתונים מהענן…</div>`;
+  else if (!S.team) body = viewWizard();
   else if (S.tab === "day") body = viewDay();
   else if (S.tab === "soldiers") body = viewSoldiers();
   else if (S.tab === "soldier") body = viewSoldier();
   else if (S.tab === "settings") body = viewSettings();
   else if (S.tab === "days") body = viewDaysEditor();
-  else body = backupBanner() + viewCal();
+  else body = viewCal();
   app.innerHTML = notice + body;
 }
 function renderNow() {
@@ -466,9 +479,11 @@ function viewSettings() {
       <form class="setrow" id="addSoldier"><input class="inp" id="newSoldier" placeholder="שם לוחם חדש" aria-label="שם לוחם חדש"><button class="btn primary small">הוספה</button></form>
       ${inact.length ? `<div class="lbl">הוסרו (ההיסטוריה שלהם נשמרת)</div><ul class="list">${inact.map(s => `<li class="item"><span>${esc(s.name)}</span><button class="btn small" data-react="${s.id}">החזרה</button></li>`).join("")}</ul>` : ""}
     </div>
-    <div class="panel" id="backup"><h2>גיבוי ושחזור</h2>
-      <div class="muted" style="font-size:.9rem">הנתונים שמורים רק בדפדפן הזה, בטלפון שלך. אף אחד אחר לא רואה אותם. כדי לא לאבד אותם בהחלפת טלפון או בניקוי הדפדפן, כדאי לגבות פעם בשבוע.
-        ${S.lastBackup ? `<br>גיבוי אחרון: ${new Date(S.lastBackup).toLocaleDateString("he-IL")}` : "<br>עוד לא בוצע גיבוי."}</div>
+    <div class="panel"><h2>חשבון</h2>
+      <div class="muted" style="font-size:.9rem">מחובר כ־<b dir="ltr">${esc(S.user?.email || "")}</b>. הנתונים נשמרים בענן בחשבון הזה ופרטיים רק לך. כדי לראות אותם במכשיר אחר, מתחברים שם עם אותו חשבון Google.</div>
+      <div class="actions"><button class="btn" data-act="logout">התנתקות</button></div></div>
+    <div class="panel" id="backup"><h2>עותק גיבוי (לא חובה)</h2>
+      <div class="muted" style="font-size:.9rem">הנתונים כבר שמורים בענן. אם רוצים, אפשר לשמור גם עותק בקובץ או בקוד.</div>
       <div class="actions"><button class="btn primary" data-act="download">הורדת קובץ גיבוי</button><button class="btn" data-act="copycode">העתקת קוד גיבוי</button></div>
       ${S.backupCode != null ? `<div class="field"><label for="codebox">ההעתקה האוטומטית לא עבדה. סמנו את הקוד והעתיקו ידנית:</label><textarea id="codebox" class="copybox" readonly>${esc(S.backupCode)}</textarea></div>` : ""}
       <div class="lbl">שחזור</div>
@@ -479,7 +494,7 @@ function viewSettings() {
       ${r ? `<div class="confirm" role="alert"><b>לשחזר את הגיבוי?</b><span>צוות "${esc(r.team.name)}" · ${r.soldiers.length} לוחמים · ${r.absences.length} יציאות · ${r.settings.reserveDays.length} ימי מילואים.<br>כל הנתונים הנוכחיים בטלפון יוחלפו.</span>
         <div class="actions"><button class="btn danger" data-act="restoreok">כן, לשחזר</button><button class="btn" data-act="restorecancel">ביטול</button></div></div>` : ""}
     </div>
-    <div class="panel"><h2>איפוס</h2><div class="muted" style="font-size:.9rem">מוחק את כל הנתונים מהטלפון ומתחיל מחדש. כדאי לגבות לפני.</div>
+    <div class="panel"><h2>איפוס</h2><div class="muted" style="font-size:.9rem">מוחק את כל נתוני הצוות מהענן ומתחיל מחדש. אי אפשר לבטל את זה.</div>
       <div class="actions"><button class="btn danger" data-act="reset">${["מחיקת כל הנתונים", "בטוח? זה ימחק הכול", "לחיצה אחרונה: למחוק"][S.resetStep]}</button>${S.resetStep ? `<button class="btn" data-act="resetcancel">ביטול</button>` : ""}</div></div>`;
 }
 
@@ -525,12 +540,31 @@ function viewDaysEditor() {
     <div class="sticky-actions"><b class="num">נבחרו ${S.pick.days.size} ימים</b><div class="actions"><button class="btn primary" data-act="savedays">שמירה</button><button class="btn" data-act="canceldays">ביטול</button></div></div>`;
 }
 
+/* ---------- login ---------- */
+function viewLogin() {
+  if (S.auth === "loading") return `<div class="empty">טוען…</div>`;
+  if (S.auth === "noconfig") return `<div class="panel wiz"><h1>המערכת עוד לא חוברה לענן</h1><p>מנהל המערכת צריך להשלים את חיבור הפרויקט ל־Firebase. נסו שוב מאוחר יותר.</p></div>`;
+  if (S.auth === "nosdk") return `<div class="panel wiz"><h1>אין חיבור</h1><p>לא הצלחתי לטעון את רכיב ההתחברות. בדקו שיש אינטרנט ורעננו את הדף.</p></div>`;
+  const inApp = /FBAN|FBAV|Instagram|Line\/|; wv\)/.test(navigator.userAgent);
+  return `<div class="panel wiz">
+    <span class="eyebrow">ניהול כוח אדם · מילואים</span>
+    <h1>מצבת הצוות</h1>
+    <p>כמה לוחמים יש בכל יום, מי בבית ולמה, מי יצא כמה, וסיכום מוכן לוואטסאפ. מתחברים עם חשבון Google, והנתונים של הצוות שלך נשמרים בענן ופרטיים רק לך. אפשר להיכנס מכל טלפון או מחשב.</p>
+    <div class="actions"><button class="btn primary" data-act="login">התחברות עם Google</button></div>
+    ${inApp ? `<div class="notice">נראה שהקישור נפתח בתוך אפליקציה. אם ההתחברות לא עובדת, פתחו אותו בדפדפן (Chrome או Safari) דרך התפריט ⋮.</div>` : ""}
+    ${S.loginErr ? `<div class="err" role="alert">${esc(S.loginErr)}</div>` : ""}
+  </div>`;
+}
+
 /* ---------- first-run wizard ---------- */
 function viewWizard() {
   const W = S.wiz || (S.wiz = { step: 1, name: "", names: [] });
   const steps = `<div class="steps" aria-hidden="true">${[1, 2, 3].map(i => `<i class="${i <= W.step ? "on" : ""}"></i>`).join("")}</div>`;
-  if (W.step === 1) return `<form class="panel wiz" id="wiz1">${steps}<span class="eyebrow">שלב 1 מתוך 3</span>
-      <h1>ברוך הבא למצבת הצוות</h1><p>כאן מרכזים את כוח האדם של הצוות במילואים: כמה לוחמים יש בכל יום, מי בבית ולמה, ומי יצא כמה. הנתונים נשמרים רק בטלפון שלך.</p>
+  const L = S.localFound;
+  const migrate = L && W.step === 1 ? `<div class="panel wiz"><h2>נמצאו נתונים בטלפון הזה</h2><p>צוות "${esc(L.team.name)}" · ${L.soldiers.length} לוחמים · ${L.absences.length} יציאות · ${L.settings.reserveDays.length} ימי מילואים. הנתונים נשמרו בגרסה הקודמת של המערכת, שעבדה בלי ענן.</p>
+      <div class="actions"><button class="btn primary" data-act="migrate">העברה לענן</button><button class="btn" data-act="skipmigrate">התחלה מחדש</button></div></div>` : "";
+  if (W.step === 1) return migrate + `<form class="panel wiz" id="wiz1">${steps}<span class="eyebrow">שלב 1 מתוך 3</span>
+      <h1>ברוך הבא למצבת הצוות</h1><p>כאן מרכזים את כוח האדם של הצוות במילואים: כמה לוחמים יש בכל יום, מי בבית ולמה, ומי יצא כמה. הנתונים נשמרים בענן בחשבון Google שלך, ורק אתה רואה אותם.</p>
       <div class="field"><label for="wName">שם הצוות</label><input class="inp" id="wName" value="${esc(W.name)}" placeholder="לדוגמה: צוות 2, פלוגה ב׳" required></div>
       <div class="actions"><button class="btn primary">המשך</button></div>
       <div class="muted" style="font-size:.85rem">יש לך קובץ או קוד גיבוי? <button type="button" class="btn small ghost" data-act="wizrestore">שחזור מגיבוי</button></div>
@@ -608,11 +642,45 @@ async function saveForm() {
 
 /* ---------- local storage (private to this browser) ---------- */
 const KEY = "matsevet-team-v1";
-let storageOk = true;
 function snapshot() { return { app: "matsevet", version: 1, team: S.team, soldiers: S.soldiers, absences: S.absences, settings: S.settings, lastBackup: S.lastBackup }; }
+/* cloud: one private Firestore document per Google account: teams/{uid} */
+let fb = null, docRef = null, unsub = null, saveTimer = null;
 function persist() {
-  try { localStorage.setItem(KEY, JSON.stringify(snapshot())); storageOk = true; }
-  catch { if (storageOk) { storageOk = false; S.notice = "הדפדפן הזה לא מאפשר לשמור נתונים, ולכן הם יימחקו כשתסגרו את הדף. נסו לפתוח את הקישור בדפדפן רגיל (לא בגלישה בסתר)."; } }
+  if (!docRef || !S.team) return;
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+    const data = JSON.parse(JSON.stringify(snapshot()));
+    data.updatedAt = firebase.firestore.FieldValue.serverTimestamp();
+    docRef.set(data).then(() => { if (S.notice === SAVE_ERR) { S.notice = ""; render(); } })
+      .catch(err => { console.error(err); S.notice = SAVE_ERR; render(); });
+  }, 400);
+}
+const SAVE_ERR = "השמירה בענן נכשלה. השינויים נשמרו בטלפון וישלחו כשהחיבור יחזור. אם זה ממשיך, נסו להתנתק ולהתחבר שוב.";
+function readLocalOld() { try { const raw = localStorage.getItem(KEY); return raw ? validData(JSON.parse(raw)) : null; } catch { return null; } }
+function clearState() { S.team = null; S.soldiers = []; S.absences = []; S.settings = { reserveDays: [], minStrength: 15 }; S.lastBackup = null; S.cache = null; S.wiz = null; S.pick = null; S.tab = "cal"; S.resetStep = 0; S.restore = null; }
+function attachUser(user) {
+  if (unsub) { unsub(); unsub = null; }
+  clearState(); S.user = user; S.cloudReady = false;
+  if (!user) { docRef = null; S.auth = "out"; render(); return; }
+  S.auth = "in"; render();
+  docRef = fb.firestore().collection("teams").doc(user.uid);
+  unsub = docRef.onSnapshot(snap => {
+    if (saveTimer || snap.metadata.hasPendingWrites) return; // our own write echoing back
+    const d = snap.exists ? validData(snap.data()) : null;
+    if (d) applyData(d); else { const keepWiz = S.wiz, keepPick = S.pick; clearState(); S.wiz = keepWiz; S.pick = keepPick; S.localFound = readLocalOld(); }
+    S.cache = null; S.cloudReady = true; render();
+  }, err => { console.error(err); S.notice = "אין גישה לנתונים בענן. בדקו את החיבור ורעננו את הדף."; S.cloudReady = true; render(); });
+}
+async function signIn() {
+  S.loginErr = ""; const prov = new firebase.auth.GoogleAuthProvider(); prov.setCustomParameters({ prompt: "select_account" });
+  try { await fb.auth().signInWithPopup(prov); }
+  catch (e) {
+    if (["auth/popup-blocked", "auth/operation-not-supported-in-this-environment", "auth/web-storage-unsupported"].includes(e.code)) { try { await fb.auth().signInWithRedirect(prov); return; } catch (e2) { e = e2; } }
+    if (e.code === "auth/popup-closed-by-user" || e.code === "auth/cancelled-popup-request") return;
+    S.loginErr = e.code === "auth/unauthorized-domain" ? "הכתובת הזו עוד לא אושרה בפרויקט Firebase (Authorized domains)." : e.code === "auth/network-request-failed" ? "אין חיבור לאינטרנט. נסו שוב." : "ההתחברות נכשלה. נסו שוב, או פתחו את הקישור ב־Chrome או Safari.";
+    render();
+  }
 }
 function validData(o) {
   if (!o || typeof o !== "object" || !o.team || typeof o.team.name !== "string" || !Array.isArray(o.soldiers) || !Array.isArray(o.absences) || !o.settings || !Array.isArray(o.settings.reserveDays)) return null;
@@ -762,8 +830,13 @@ document.addEventListener("click", async e => {
     case "restoreok": applyData(S.restore); S.restore = null; S.wiz = null; S.lastBackup = S.lastBackup || Date.now(); S.tab = "cal"; onData(); window.scrollTo(0, 0); toast("הנתונים שוחזרו"); return;
     case "reset":
       if (S.resetStep < 2) { S.resetStep++; render(); return; }
-      try { localStorage.removeItem(KEY); } catch {}
-      S.team = null; S.soldiers = []; S.absences = []; S.settings = { reserveDays: [], minStrength: 15 }; S.lastBackup = null; S.resetStep = 0; S.wiz = null; S.tab = "cal"; S.cache = null; render(); window.scrollTo(0, 0); return;
+      clearTimeout(saveTimer); saveTimer = null;
+      try { await docRef.delete(); } catch (err) { console.error(err); toast("המחיקה בענן נכשלה. נסו שוב."); return; }
+      clearState(); render(); window.scrollTo(0, 0); return;
+    case "login": signIn(); return;
+    case "logout": clearTimeout(saveTimer); saveTimer = null; fb.auth().signOut(); return;
+    case "migrate": applyData(S.localFound); S.localFound = null; S.wiz = null; S.tab = "cal"; onData(); try { localStorage.removeItem(KEY); } catch {} toast("הנתונים הועברו לענן"); return;
+    case "skipmigrate": S.localFound = null; try { localStorage.removeItem(KEY); } catch {} render(); return;
     case "resetcancel": S.resetStep = 0; render(); return;
   }
   if (d.wdel != null) { S.wiz.names.splice(Number(d.wdel), 1); render(); }
@@ -780,9 +853,12 @@ document.addEventListener("submit", e => {
 /* ---------- data ---------- */
 function onData() { S.cache = null; persist(); render(); }
 function init() {
-  let raw = null;
-  try { raw = localStorage.getItem(KEY); } catch { storageOk = false; S.notice = "הדפדפן הזה לא מאפשר לשמור נתונים, ולכן הם יימחקו כשתסגרו את הדף. נסו לפתוח את הקישור בדפדפן רגיל (לא בגלישה בסתר)."; }
-  if (raw) { try { const d = validData(JSON.parse(raw)); if (d) applyData(d); } catch {} }
+  if (!FIREBASE_CONFIG.apiKey) { S.auth = "noconfig"; render(); return; }
+  if (!window.firebase) { S.auth = "nosdk"; render(); return; }
+  fb = firebase.initializeApp(FIREBASE_CONFIG);
+  fb.firestore().enablePersistence({ synchronizeTabs: true }).catch(() => {});
+  fb.auth().getRedirectResult().catch(e => { if (e && e.code !== "auth/no-auth-event") { S.loginErr = "ההתחברות נכשלה. נסו שוב."; render(); } });
+  fb.auth().onAuthStateChanged(attachUser);
   render();
 }
 init();

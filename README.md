@@ -22,12 +22,19 @@
 # גרסה משותפת למפקדים – `docs/index.html`
 
 גרסה נפרדת שכל מפקד יכול להשתמש בה לצוות שלו. היא לא קשורה למערכת הפרטית שלמעלה.
+- **התחברות:** חובה להתחבר עם Google (Firebase Auth).
+- **שמירה:** הנתונים נשמרים ב־Firestore במסמך אחד פרטי לכל משתמש: `teams/{uid}`.
+- **אבטחה:** כללי האבטחה ב־`firestore.rules` מאפשרים לכל משתמש לקרוא ולכתוב רק את המסמך שלו.
 - **אשף פתיחה:** שם הצוות ← הוספת לוחמים ידנית ← סימון ימי המילואים בלחיצה על הלוח.
-- **פרטיות:** הנתונים נשמרים ב־`localStorage` בדפדפן של כל מפקד. אין שרת, אין הרשמה, ואף אחד אחר לא רואה אותם.
-- **גיבוי:** אפשר להוריד קובץ JSON או להעתיק קוד גיבוי (`MATSEVET1:…`). תזכורת מופיעה אחרי שבוע בלי גיבוי. השחזור נעשה מקובץ או מקוד.
-- **פיצ'רים:** כל הפיצ'רים של המערכת המקורית – לוח, מסך יום, יציאות לפי שעות, סיכום ללוחם, וואטסאפ ומינימום.
+- **מעבר מהגרסה הקודמת:** מי שהזין נתונים בגרסה הקודמת, שעבדה בלי ענן, מקבל הצעה להעביר אותם לענן.
+- **פיצ'רים:** כל הפיצ'רים של המערכת המקורית. עותק גיבוי בקובץ או בקוד הוא אופציונלי.
 
-## הפעלה ב־GitHub Pages
-1. Settings ← General ← Danger Zone ← Change visibility ← **Public**.
-2. Settings ← Pages ← Source: **Deploy from a branch** ← בוחרים ענף ותיקייה `/docs` ← Save.
-3. הכתובת: `https://abergil023.github.io/People-manage-/`
+## הגדרה חד־פעמית
+1. **פרויקט Firebase:** פותחים פרויקט ב־console.firebase.google.com.
+   - Authentication ← Sign-in method ← מפעילים את **Google**.
+   - Authentication ← Settings ← Authorized domains ← מוסיפים `abergil023.github.io`.
+   - Firestore Database ← Create database (Production mode) ← בלשונית Rules מדביקים את התוכן של `firestore.rules` ← Publish.
+   - Project settings ← Your apps ← Web app (`</>`) ← מעתיקים את `apiKey`, `authDomain`, `projectId`, `appId` לתוך `FIREBASE_CONFIG` ב־`docs/index.html`.
+2. **הפיכת הריפו לציבורי:** Settings ← General ← Change visibility ← **Public**.
+3. **הפעלת Pages:** Settings ← Pages ← Deploy from a branch ← בוחרים ענף ותיקייה `/docs`.
+4. **הכתובת:** `https://abergil023.github.io/People-manage-/`

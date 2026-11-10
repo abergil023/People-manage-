@@ -1,0 +1,9 @@
+rules_version = '2';
+// The app does not use Cloud Storage. Deny everything in case Storage is ever enabled.
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

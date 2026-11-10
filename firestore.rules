@@ -1,10 +1,50 @@
 rules_version = '2';
+
+// Matsevet (shared version) - Firestore security rules.
+// Model: one private document per Google account at /teams/{uid}.
+// Everything else is denied by default.
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Each commander can read and write only their own team document.
-    match /teams/{uid} {
-      allow read, write: if request.auth != null && request.auth.uid == uid;
+
+    function isOwner(uid) {
+      return request.auth != null && request.auth.uid == uid;
     }
+
+    // Shape and size limits for a team document, matching what the app writes:
+    // { app, version, team{name, createdAt}, soldiers[], absences[],
+    //   settings{reserveDays[], minStrength, reportTimes[]}, lastBackup, updatedAt }
+    function validTeam(d) {
+      return d.keys().hasAll(['team', 'soldiers', 'absences', 'settings', 'updatedAt'])
+        && d.keys().hasOnly(['app', 'version', 'team', 'soldiers', 'absences', 'settings', 'lastBackup', 'updatedAt'])
+        && (!('app' in d) || d.app == 'matsevet')
+        && (!('version' in d) || d.version is number)
+        && d.team is map
+        && d.team.keys().hasAll(['name'])
+        && d.team.keys().hasOnly(['name', 'createdAt'])
+        && d.team.name is string && d.team.name.size() > 0 && d.team.name.size() <= 80
+        && (!('createdAt' in d.team) || d.team.createdAt is number)
+        && d.soldiers is list && d.soldiers.size() <= 300
+        && d.absences is list && d.absences.size() <= 5000
+        && d.settings is map
+        && d.settings.keys().hasAll(['reserveDays'])
+        && d.settings.keys().hasOnly(['reserveDays', 'minStrength', 'reportTimes'])
+        && d.settings.reserveDays is list && d.settings.reserveDays.size() <= 400
+        && (!('minStrength' in d.settings) || (d.settings.minStrength is number && d.settings.minStrength >= 0 && d.settings.minStrength <= 1000))
+        && (!('reportTimes' in d.settings) || (d.settings.reportTimes is list && d.settings.reportTimes.size() <= 4))
+        && (!('lastBackup' in d) || d.lastBackup == null || d.lastBackup is number)
+        // updatedAt must be the server time of this very write (serverTimestamp()).
+        && d.updatedAt == request.time;
+    }
+
+    match /teams/{uid} {
+      // Read only your own document, by exact path. Listing/querying the collection is never allowed.
+      allow get: if isOwner(uid);
+      allow list: if false;
+      allow create, update: if isOwner(uid) && validTeam(request.resource.data);
+      allow delete: if isOwner(uid);
+    }
+
+    // Default deny for every other collection and subcollection.
     match /{document=**} {
       allow read, write: if false;
     }

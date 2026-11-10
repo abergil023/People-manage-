@@ -354,7 +354,7 @@ function viewDay() {
   const span = inf.s1 - inf.s0;
   const tl = inf.segs.map(s => `<div class="${statusCls(s.n)}" style="width:${((s.t1 - s.t0) / span * 100).toFixed(2)}%" title="${hm(s.t0)}–${s.t1 === inf.s1 ? "24:00" : hm(s.t1)}">${s.n}</div>`).join("");
   const segList = inf.segs.length > 1 ? `<div class="seglist">${inf.segs.map(s => `<div><span class="num">${span2(hm(s.t0), s.t1 === inf.s1 ? "24:00" : hm(s.t1))}</span><b class="num">${s.n}/${inf.total}</b></div>`).join("")}</div>` : "";
-  const item = (p, a, extra = "") => `<li class="item"><div style="min-width:0"><div class="who">${esc(p.sol.name)} ${extra}</div><div class="meta">${esc(reasonText(a)) || "&nbsp;"} · ${esc(absRangeText(a))}</div></div><button class="btn small ghost" data-edit="${a.id}">עריכה</button></li>`;
+  const item = (p, a, extra = "") => `<li class="item"><div style="min-width:0"><div class="who">${esc(p.sol.name)} ${extra}</div><div class="meta">${esc(reasonText(a)) || "&nbsp;"} · ${esc(absRangeText(a))}</div></div><button class="btn small ghost" data-edit="${esc(a.id)}">עריכה</button></li>`;
   const sec = (t, arr) => arr.length ? `<div class="panel"><div class="row"><h2>${TYPES[t]}</h2><span class="chip ${TYPE_CLS[t]}">${arr.length}</span></div><ul class="list">${arr.map(p => item(p, p.full)).join("")}</ul></div>` : "";
   const clip = (a) => span2(hm(Math.max(inf.s0, ms(a.start))), Math.min(inf.s1, ms(a.end)) === inf.s1 ? "24:00" : hm(ms(a.end)));
   const partSec = partial.length ? `<div class="panel"><div class="row"><h2>יציאות לפי שעות</h2><span class="chip c-home">${partial.length}</span></div><ul class="list">${partial.flatMap(p => p.partial.map(a => item(p, a, `<span class="chip ${TYPE_CLS[a.type]}">${clip(a)}</span>`))).join("")}</ul></div>` : "";
@@ -403,7 +403,7 @@ function viewSoldiers() {
   else list.sort((a, b) => (a.s.order ?? 0) - (b.s.order ?? 0));
   const days = cache().days.length || 1;
   const avg = list.reduce((n, x) => n + x.st.home, 0) / list.length;
-  const rows = list.map(({ s, st }) => `<button class="srow" data-soldier="${s.id}">
+  const rows = list.map(({ s, st }) => `<button class="srow" data-soldier="${esc(s.id)}">
       <span class="who" style="font-weight:700;overflow-wrap:anywhere">${esc(s.name)}</span>
       <span class="bar" aria-hidden="true"><i style="width:${st.home / days * 100}%;background:var(--home)"></i><i style="width:${st.course / days * 100}%;background:var(--course)"></i><i style="width:${st.nir / days * 100}%;background:var(--nir)"></i></span>
       <span class="n">${st.home} ימי בית${st.course ? ` · ${st.course} קורס` : ""}${st.partial ? ` · ${st.partial} בשעות` : ""}</span></button>`).join("");
@@ -420,7 +420,7 @@ function viewSoldier() {
   const st = soldierStats(s.id);
   const abs = S.absences.filter(a => a.soldierId === s.id).sort((a, b) => ms(a.start) - ms(b.start));
   const items = abs.map(a => `<li class="item"><div style="min-width:0"><div class="who"><span class="chip ${TYPE_CLS[a.type]}">${TYPES[a.type]}</span> ${esc(absRangeText(a))}</div>
-      <div class="meta">${a.allDay ? `${absDays(a)} ימי מילואים` : "לפי שעות"}${reasonText(a) ? " · " + esc(reasonText(a)) : ""}</div></div><button class="btn small ghost" data-edit="${a.id}">עריכה</button></li>`).join("");
+      <div class="meta">${a.allDay ? `${absDays(a)} ימי מילואים` : "לפי שעות"}${reasonText(a) ? " · " + esc(reasonText(a)) : ""}</div></div><button class="btn small ghost" data-edit="${esc(a.id)}">עריכה</button></li>`).join("");
   return `<div class="panel">
     <div class="row"><h2 style="font-size:1.3rem">${esc(s.name)}</h2><button class="btn small ghost" data-tab="soldiers">חזרה לרשימה</button></div>
     <div class="tiles">
@@ -430,7 +430,7 @@ function viewSoldier() {
       <div class="stat"><b>${st.partial}</b><span>ימים עם יציאה בשעות</span></div>
     </div>
     ${st.nir ? `<div class="muted">לא במילואים: ${st.nir} ימים</div>` : ""}
-    <button class="btn primary" data-act="new" data-soldier-id="${s.id}">+ יציאה ל${esc(s.name)}</button>
+    <button class="btn primary" data-act="new" data-soldier-id="${esc(s.id)}">+ יציאה ל${esc(s.name)}</button>
   </div>
   <div class="panel"><h2>כל היציאות וההיעדרויות</h2>${items ? `<ul class="list">${items}</ul>` : `<div class="empty">עוד אין יציאות רשומות ל${esc(s.name)}.</div>`}</div>`;
 }
@@ -448,9 +448,9 @@ function viewSettings() {
     <div class="panel"><div class="row"><h2>ימי מילואים</h2><span class="chip c-present">${reserveDays().length} ימים</span></div>${ranges || `<div class="muted">אין טווחים.</div>`}
       <button class="btn" data-act="addrange">+ טווח תאריכים</button></div>
     <div class="panel"><div class="row"><h2>לוחמים</h2><span class="chip c-present">סד״כ ${act.length}</span></div>
-      <ul class="list">${act.map(s => `<li class="setrow"><input class="inp" id="sn-${s.id}" value="${esc(s.name)}" data-rename="${s.id}" aria-label="שם הלוחם"><button class="btn small danger" data-deact="${s.id}">הסרה</button></li>`).join("")}</ul>
+      <ul class="list">${act.map(s => `<li class="setrow"><input class="inp" id="sn-${esc(s.id)}" value="${esc(s.name)}" data-rename="${esc(s.id)}" aria-label="שם הלוחם"><button class="btn small danger" data-deact="${esc(s.id)}">הסרה</button></li>`).join("")}</ul>
       <form class="setrow" id="addSoldier"><input class="inp" id="newSoldier" placeholder="שם לוחם חדש" aria-label="שם לוחם חדש"><button class="btn primary small">הוספה</button></form>
-      ${inact.length ? `<div class="lbl">הוסרו (ההיסטוריה שלהם נשמרת)</div><ul class="list">${inact.map(s => `<li class="item"><span>${esc(s.name)}</span><button class="btn small" data-react="${s.id}">החזרה</button></li>`).join("")}</ul>` : ""}
+      ${inact.length ? `<div class="lbl">הוסרו (ההיסטוריה שלהם נשמרת)</div><ul class="list">${inact.map(s => `<li class="item"><span>${esc(s.name)}</span><button class="btn small" data-react="${esc(s.id)}">החזרה</button></li>`).join("")}</ul>` : ""}
     </div>`;
 }
 
@@ -470,7 +470,7 @@ function openForm(opts) {
 function drawForm() {
   if (!form) { modal.innerHTML = ""; return; }
   const f = form;
-  const opts = activeSoldiers().map(s => `<option value="${s.id}" ${s.id === f.soldierId ? "selected" : ""}>${esc(s.name)}</option>`).join("");
+  const opts = activeSoldiers().map(s => `<option value="${esc(s.id)}" ${s.id === f.soldierId ? "selected" : ""}>${esc(s.name)}</option>`).join("");
   modal.innerHTML = `<div class="overlay" data-act="close"><form class="sheet" id="absForm" role="dialog" aria-modal="true" aria-labelledby="ftitle">
     <div class="row"><h2 id="ftitle">${f.id ? "עריכת" : "הוספת"} יציאה / היעדרות</h2><button type="button" class="btn small ghost" data-act="close">סגירה</button></div>
     <div class="field"><label for="fSoldier">לוחם</label><select id="fSoldier" required><option value="">בחירת לוחם…</option>${opts}</select></div>

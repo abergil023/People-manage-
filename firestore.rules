@@ -21,7 +21,7 @@ service cloud.firestore {
         && d.team is map
         && d.team.keys().hasAll(['name'])
         && d.team.keys().hasOnly(['name', 'createdAt'])
-        && d.team.name is string && d.team.name.size() > 0 && d.team.name.size() <= 80
+        && d.team.name is string && d.team.name.size() > 0 && d.team.name.size() <= 200
         && (!('createdAt' in d.team) || d.team.createdAt is number)
         && d.soldiers is list && d.soldiers.size() <= 300
         && d.absences is list && d.absences.size() <= 5000
@@ -29,7 +29,7 @@ service cloud.firestore {
         && d.settings.keys().hasAll(['reserveDays'])
         && d.settings.keys().hasOnly(['reserveDays', 'minStrength', 'reportTimes'])
         && d.settings.reserveDays is list && d.settings.reserveDays.size() <= 400
-        && (!('minStrength' in d.settings) || (d.settings.minStrength is number && d.settings.minStrength >= 0 && d.settings.minStrength <= 1000))
+        && (!('minStrength' in d.settings) || (d.settings.minStrength is number && d.settings.minStrength >= 0))
         && (!('reportTimes' in d.settings) || (d.settings.reportTimes is list && d.settings.reportTimes.size() <= 4))
         && (!('lastBackup' in d) || d.lastBackup == null || d.lastBackup is number)
         // updatedAt must be the server time of this very write (serverTimestamp()).

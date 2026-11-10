@@ -114,11 +114,14 @@ test("rejects wrong types", async () => {
   await assertFails(setDoc(doc(db(ALICE), "teams", ALICE), team({ lastBackup: "yesterday" })));
 });
 test("rejects oversized data", async () => {
-  await assertFails(setDoc(doc(db(ALICE), "teams", ALICE), team({ team: { name: "x".repeat(81) } })));
+  await assertFails(setDoc(doc(db(ALICE), "teams", ALICE), team({ team: { name: "x".repeat(201) } })));
   await assertFails(setDoc(doc(db(ALICE), "teams", ALICE), team({ soldiers: Array.from({ length: 301 }, (_, i) => ({ id: "s" + i, name: "n" })) })));
   await assertFails(setDoc(doc(db(ALICE), "teams", ALICE), team({ settings: { reserveDays: Array.from({ length: 401 }, () => "2026-11-16") } })));
 });
 test("rejects client-chosen timestamps (updatedAt must be server time)", async () => {
   await assertFails(setDoc(doc(db(ALICE), "teams", ALICE), team({ updatedAt: Timestamp.fromMillis(0) })));
   await assertFails(setDoc(doc(db(ALICE), "teams", ALICE), team({ updatedAt: "now" })));
+});
+test("edge values the current app can produce are accepted (long team name, high minimum)", async () => {
+  await assertSucceeds(setDoc(doc(db(ALICE), "teams", ALICE), team({ team: { name: "צ".repeat(200), createdAt: 1 }, settings: { reserveDays: [], minStrength: 99999 } })));
 });

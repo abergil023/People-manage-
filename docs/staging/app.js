@@ -546,7 +546,7 @@ function validData(o, strict) {
   if (strict && (o.soldiers.length > LIMITS.soldiers || o.absences.length > LIMITS.absences || o.settings.reserveDays.length > LIMITS.reserveDays)) return null;
   const okKey = k => typeof k === "string" && /^\d{4}-\d{2}-\d{2}$/.test(k);
   const okT = t => typeof t === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(t);
-  const name = cleanStr(o.team.name, 80);
+  const name = cleanStr(o.team.name, 200);
   if (!name) return null;
   const soldiers = o.soldiers.filter(x => x && typeof x === "object" && typeof x.id === "string" && ID_RE.test(x.id) && cleanStr(x.name, 60))
     .slice(0, LIMITS.soldiers).map(x => ({ id: x.id, name: cleanStr(x.name, 60), active: x.active !== false, order: Number.isFinite(Number(x.order)) ? Number(x.order) : 0 }));
@@ -558,7 +558,7 @@ function validData(o, strict) {
   return {
     team: { name, createdAt: Number.isFinite(Number(o.team.createdAt)) && Number(o.team.createdAt) > 0 ? Number(o.team.createdAt) : Date.now() },
     soldiers, absences,
-    settings: { reserveDays: [...new Set(o.settings.reserveDays.filter(okKey))].sort().slice(0, LIMITS.reserveDays), minStrength: Math.min(1000, Math.max(0, parseInt(o.settings.minStrength, 10) || 0)), reportTimes: reportTimes.length ? reportTimes : ["10:00", "20:00"] },
+    settings: { reserveDays: [...new Set(o.settings.reserveDays.filter(okKey))].sort().slice(0, LIMITS.reserveDays), minStrength: Math.max(0, parseInt(o.settings.minStrength, 10) || 0), reportTimes: reportTimes.length ? reportTimes : ["10:00", "20:00"] },
     lastBackup: Number.isFinite(Number(o.lastBackup)) && Number(o.lastBackup) > 0 ? Number(o.lastBackup) : null
   };
 }

@@ -30,6 +30,8 @@ jobs:
         run: npm audit --omit=dev --audit-level=high
       - name: Duty roster engine tests
         run: npm run test:scheduler
+      - name: Fighters link tests (encryption, no personal data)
+        run: npm run test:roster
       - name: Firestore rules tests (cross-user isolation, validation)
         run: npm run test:rules
       - name: App security tests (XSS, CSP, logout, clickjacking, regression)

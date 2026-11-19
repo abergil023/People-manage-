@@ -38,7 +38,7 @@ const name = id => (soldiers[id] && typeof soldiers[id].name === "string" ? sold
 const LABEL = { carmelA: "כרמל חוץ מוצב", patrol: "סיור" };
 const days = Object.keys(schedule).filter(k => /^\d{4}-\d{2}-\d{2}$/.test(k) && (!reserve.size || reserve.has(k))).sort().map(key => {
   const d = schedule[key] || {};
-  const start = d.v === 2 ? "07:00" : "06:30";
+  const start = d.startAt ? String(d.startAt).slice(11, 16) : d.v === 2 ? "07:00" : "06:30"; // a day may start late (e.g. 15:00)
   return {
     key, type: ["post", "patrol"].includes(d.type) ? d.type : "none", start,
     kitchen: d.kitchen ? name(d.kitchen) : null,

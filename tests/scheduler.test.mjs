@@ -320,3 +320,24 @@ test("60 random edits (replace / move) keep the roster free of double bookings a
   }
   assert.equal(JSON.stringify(S.buildAll(input, docs, "repair").docs), JSON.stringify(docs), "stable after edits");
 });
+
+test("a day that starts late (startAt 15:00) with manual openers: openers kept, everything filled from 15:00 only", () => {
+  const k = "2026-11-19";
+  const seed = { v: 2, type: "post", startAt: `${k}T15:00`, kitchen: idOf("הררי"), kitchenLocked: true,
+    shifts: [{ kind: "carmelA", start: `${k}T15:00`, end: `${k}T19:00`, members: [idOf("אברג׳יל"), idOf("יואב")], locked: [idOf("אברג׳יל"), idOf("יואב")] },
+             { kind: "carmelA", start: `${k}T19:00`, end: `2026-11-20T07:00`, members: [], locked: [] }],
+    hours: Array.from({ length: 16 }, (_, i) => { const t = T(`${k}T15:00`) + i * H; return { start: S.fmt(t), guards: i ? [] : [idOf("מתניה")], gLocked: i ? [] : [idOf("מתניה")], carmelB: i ? [] : [idOf("הררי")], bLocked: i ? [] : [idOf("הררי")] }; }) };
+  const input = { soldiers, absences: [], days, dayTypes: allPost, now: T(`${k}T14:57`) };
+  const { docs } = S.buildAll(input, { [k]: seed }, "repair");
+  const d = docs[k];
+  assert.equal(d.startAt, `${k}T15:00`);
+  assert.equal(d.kitchen, idOf("הררי"));
+  assert.equal(d.shifts[0].start.slice(11), "15:00"); assert.equal(d.shifts[0].members.length, 8);
+  assert.ok(d.shifts[0].members.includes(idOf("אברג׳יל")) && d.shifts[0].members.includes(idOf("יואב")));
+  assert.equal(d.hours.length, 16); assert.equal(d.hours[0].start.slice(11), "15:00");
+  same(d.hours[0].guards, [idOf("מתניה")]);
+  assert.ok(d.hours[0].carmelB.includes(idOf("הררי"))); assert.equal(d.hours[0].carmelB.length, 5);
+  assert.equal(total(S.validate(input, docs)), 0, JSON.stringify(S.validate(input, docs)[k]));
+  assert.equal(JSON.stringify(S.buildAll(input, docs, "repair").docs), JSON.stringify(docs), "stable");
+  assert.equal(S.assignmentsOf(docs, idOf("הררי")).find(a => a.what === "תורן מטבח").start.slice(11), "15:00");
+});

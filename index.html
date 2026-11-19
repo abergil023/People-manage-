@@ -737,12 +737,17 @@ const SCHED = (() => {
   function kitchenMayGuard(t, v) { if (v !== V) return false; const h = hourOf(t); return h >= 20 || h < 8; }
 
   function dayWindow(key, v) { const s = v === 1 ? "06:30" : START; return [T(`${key}T${s}`), T(`${plusDays(key, 1)}T${s}`)]; }
-  function template(key, type) {
+  function template(key, type, from) {
     const n = plusDays(key, 1);
-    if (type === "post") return [["carmelA", `${key}T${START}`, `${key}T${MID}`], ["carmelA", `${key}T${MID}`, `${n}T${START}`]];
-    if (type === "patrol") return [["patrol", `${key}T${START}`, `${key}T${MID}`], ["patrol", `${key}T${MID}`, `${n}T${START}`]];
-    return [];
+    let t = [];
+    if (type === "post") t = [["carmelA", `${key}T${START}`, `${key}T${MID}`], ["carmelA", `${key}T${MID}`, `${n}T${START}`]];
+    if (type === "patrol") t = [["patrol", `${key}T${START}`, `${key}T${MID}`], ["patrol", `${key}T${MID}`, `${n}T${START}`]];
+    if (!from) return t;
+    // the roster starts later this day: drop finished shifts, clip the first one
+    return t.filter(([, , e]) => T(e) > from).map(([k, s, e]) => [k, T(s) < from ? fmt(from) : s, e]);
   }
+  // effective start of a day (a day may start later than 07:00, see startAt)
+  function dayStart(key, d) { const d0 = dayWindow(key, d && d.v); return d && d.startAt ? Math.max(d0[0], T(d.startAt)) : d0[0]; }
   // old documents (v1: guard / guardLocked) -> current shape (guards[] / gLocked[]); never mutates the input
   function normalize(d) {
     if (!d) return null;
@@ -835,8 +840,10 @@ const SCHED = (() => {
 
   function buildDay(c, key, type, prev, mode) {
     const doc = { v: V, type, kitchen: null, kitchenLocked: false, shifts: [], hours: [] };
+    const from = prev && prev.v === V && prev.startAt ? prev.startAt : null;
+    if (from) doc.startAt = from;
     if (type !== "post" && type !== "patrol") return doc;
-    const [d0, d1] = dayWindow(key, V);
+    const d1 = dayWindow(key, V)[1], d0 = dayStart(key, doc);
     const same = !!prev && prev.type === type && prev.v === V;
     const frozen = t => t < c.now;
     const repair = mode === "repair";
@@ -867,7 +874,7 @@ const SCHED = (() => {
         // never take someone whose role the day's missions cannot do without
         const need = id => {
           let p = 0;
-          for (const [kind, s, e] of template(key, type)) for (const q of SPEC[kind].reqs) {
+          for (const [kind, s, e] of template(key, type, d0)) for (const q of SPEC[kind].reqs) {
             if (!has(c, id, q.r)) continue;
             const others = c.ids.filter(o => o !== id && has(c, o, q.r) && free(c, o, T(s), T(e))).length;
             p += others < q.n ? 10000 : others < q.n * 2 ? 300 : 0;
@@ -882,7 +889,7 @@ const SCHED = (() => {
     if (doc.kitchen && c.stats[doc.kitchen]) { c.stats[doc.kitchen].kitchen += 1; c.stats[doc.kitchen].load += 4; }
 
     // outer post (carmel A) shifts / patrols
-    template(key, type).forEach(([kind, s, e], i) => {
+    template(key, type, d0).forEach(([kind, s, e], i) => {
       const t0 = T(s), t1 = T(e), spec = SPEC[kind], n = SIZE[kind];
       const ps = same ? prev.shifts[i] : null;
       const locked = ps ? ps.locked : [];
@@ -991,7 +998,7 @@ const SCHED = (() => {
   function slotsOf(key, day) {
     const d = normalize(day), out = [];
     if (!d || (d.type !== "post" && d.type !== "patrol")) return out;
-    const [d0, d1] = dayWindow(key, d.v);
+    const d1 = dayWindow(key, d.v)[1], d0 = dayStart(key, d);
     out.push({ ref: "k", kind: "kitchen", t0: d0, t1: d1, label: KIND_LABEL.kitchen });
     d.shifts.forEach((sh, i) => out.push({ ref: `s|${i}`, kind: sh.kind, t0: T(sh.start), t1: T(sh.end), label: `${KIND_LABEL[sh.kind]} ${sh.start.slice(11)}–${sh.end.slice(11)}` }));
     d.hours.forEach((h, i) => {
@@ -1078,7 +1085,7 @@ const SCHED = (() => {
     for (const key of [...(input.days || [])].sort()) {
       const d = normalize(docs[key]), list = (out[key] = []);
       if (!d || (d.type !== "post" && d.type !== "patrol")) continue;
-      const [d0, d1] = dayWindow(key, d.v);
+      const d1 = dayWindow(key, d.v)[1], d0 = dayStart(key, d);
       if (d1 <= c.now) continue; // finished days are history
       const chk = (id, t0, t1, lab) => {
         if (!c.stats[id]) list.push(`${lab}: ${nm(id)} לא בסד״כ הפעיל`);
@@ -1138,7 +1145,7 @@ const SCHED = (() => {
     const out = [];
     for (const key of Object.keys(docs).sort()) {
       const d = normalize(docs[key]); if (!d || !d.type) continue;
-      const [d0, d1] = dayWindow(key, d.v);
+      const d1 = dayWindow(key, d.v)[1], d0 = dayStart(key, d);
       if (d.kitchen === id) out.push({ key, what: KIND_LABEL.kitchen, start: fmt(d0), end: fmt(d1) });
       for (const sh of d.shifts) if (sh.members.includes(id)) out.push({ key, what: KIND_LABEL[sh.kind], start: sh.start, end: sh.end });
       // merge consecutive hours of guard / inner post into ranges
@@ -1155,7 +1162,7 @@ const SCHED = (() => {
     return out.sort((a, b) => a.start.localeCompare(b.start));
   }
 
-  return { buildAll, validate, assignmentsOf, slotsOf, holders, assignInDay, replaceInDay, moveInDay, diffDay, normalize, hourSpec, kitchenMayGuard, dayWindow, template, ROLE, ROLE_LABEL, SIZE, SPEC, KIND_LABEL, HOUR, V, T, fmt, plusDays };
+  return { buildAll, validate, assignmentsOf, slotsOf, holders, assignInDay, replaceInDay, moveInDay, diffDay, normalize, hourSpec, kitchenMayGuard, dayWindow, dayStart, template, ROLE, ROLE_LABEL, SIZE, SPEC, KIND_LABEL, HOUR, V, T, fmt, plusDays };
 })();
 /* ==== SCHEDULER ENGINE END ==== */
 
@@ -1288,7 +1295,7 @@ function viewSchedDay() {
   const problems = Object.keys(S.schedule).length ? (SCHED.validate(schedInput(), S.schedule)[k] || []) : [];
   return `<div class="panel">
     <div class="dayhead"><button class="btn small" ${prev ? `data-sday="${prev}"` : "disabled"} aria-label="יום קודם">→</button><h2>${longDate(k)}</h2><button class="btn small" ${next ? `data-sday="${next}"` : "disabled"} aria-label="יום הבא">←</button></div>
-    <div class="row"><span class="eyebrow">${DAY_TYPE[S.schedule[k] ? S.schedule[k].type : dayTypeOf(k)]} · ${span2(S.schedule[k] && S.schedule[k].v !== SCHED.V ? "06:30" : "07:00", S.schedule[k] && S.schedule[k].v !== SCHED.V ? "06:30" : "07:00")} למחרת</span>${S.isOwner ? `<button class="btn small ghost" data-tab="sched">חזרה לשבצ״ק</button>` : ""}</div>
+    <div class="row"><span class="eyebrow">${DAY_TYPE[S.schedule[k] ? S.schedule[k].type : dayTypeOf(k)]} · ${span2(S.schedule[k] ? SCHED.fmt(SCHED.dayStart(k, S.schedule[k])).slice(11) : "07:00", S.schedule[k] && S.schedule[k].v !== SCHED.V ? "06:30" : "07:00")} למחרת</span>${S.isOwner ? `<button class="btn small ghost" data-tab="sched">חזרה לשבצ״ק</button>` : ""}</div>
     ${dayBody(k, problems)}
     ${S.isOwner ? `<div class="muted" style="font-size:.82rem">לחיצה על שם מאפשרת להחליף לוחם. ★ אברג׳יל/אביאל · מפ׳ מפקד · ד׳ נהג דוד · ט׳ נהג טיגריס</div>` : ""}
   </div>`;

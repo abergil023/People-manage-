@@ -1294,6 +1294,7 @@ function viewSchedDay() {
     <div class="dayhead"><button class="btn small" ${prev ? `data-sday="${prev}"` : "disabled"} aria-label="יום קודם">→</button><h2>${longDate(k)}</h2><button class="btn small" ${next ? `data-sday="${next}"` : "disabled"} aria-label="יום הבא">←</button></div>
     <div class="row"><span class="eyebrow">${DAY_TYPE[S.schedule[k] ? S.schedule[k].type : dayTypeOf(k)]} · ${span2(S.schedule[k] ? SCHED.fmt(SCHED.dayStart(k, S.schedule[k])).slice(11) : "07:00", S.schedule[k] && S.schedule[k].v !== SCHED.V ? "06:30" : "07:00")} למחרת</span>${S.isOwner ? `<button class="btn small ghost" data-tab="sched">חזרה לשבצ״ק</button>` : ""}</div>
     ${dayBody(k, problems)}
+    ${S.schedule[k] ? `<div class="actions"><button class="btn" data-act="pdf">ייצוא היום ל־PDF</button></div>` : ""}
     ${S.isOwner ? `<div class="muted" style="font-size:.82rem">לחיצה על שם מאפשרת להחליף לוחם. ★ אברג׳יל/אביאל · מפ׳ מפקד · ד׳ נהג דוד · ט׳ נהג טיגריס</div>` : ""}
   </div>`;
 }
@@ -1489,6 +1490,86 @@ document.addEventListener("click", async e => {
     try { await navigator.clipboard.writeText(inp.value); toast("הקישור הועתק"); } catch { inp.focus(); inp.select(); toast("סמנו והעתיקו ידנית"); }
   }
 });
+
+/* ---------- export a day of the roster as a PDF (drawn on canvas -> JPEG pages -> minimal PDF) ---------- */
+function rosterPdfPages(key) {
+  const d = SCHED.normalize(S.schedule[key]); if (!d) return [];
+  const W = 1240, Hh = 1754, M = 70, inp = schedInput();
+  const LRI = "⁦", PDI = "⁩";
+  const pages = []; let cv, ctx, y;
+  const font = (px, bold) => `${bold ? "700" : "400"} ${px}px Assistant, Rubik, Arial, "Noto Sans Hebrew", sans-serif`;
+  const newPage = () => { cv = document.createElement("canvas"); cv.width = W; cv.height = Hh; ctx = cv.getContext("2d"); ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, W, Hh); ctx.direction = "rtl"; ctx.textAlign = "right"; ctx.textBaseline = "top"; ctx.fillStyle = "#1C2118"; pages.push(cv); y = M; };
+  const ensure = h => { if (y + h > Hh - M) newPage(); };
+  const wrap = (text, maxW, px, bold) => { ctx.font = font(px, bold); const words = String(text).split(" "), lines = []; let cur = ""; for (const w of words) { const t = cur ? cur + " " + w : w; if (ctx.measureText(t).width > maxW && cur) { lines.push(cur); cur = w; } else cur = t; } if (cur) lines.push(cur); return lines.length ? lines : [""]; };
+  const text = (t, x, px, bold, color) => { ctx.font = font(px, bold); ctx.fillStyle = color || "#1C2118"; ctx.fillText(t, x, y); };
+  const rng = (a, b) => `${LRI}${a}–${b}${PDI}`;
+  const names = ids => ids.map(nameOf).join(", ");
+  newPage();
+  text(`שבצ״ק – ${longDate(key)}`, W - M, 44, true); y += 62;
+  const start = SCHED.fmt(SCHED.dayStart(key, d)).slice(11);
+  text(`${DAY_TYPE[d.type]} · ${rng(start, d.v === SCHED.V ? "07:00" : "06:30")} למחרת · הופק ${LRI}${new Date().toLocaleString("he-IL", { dateStyle: "short", timeStyle: "short" })}${PDI}`, W - M, 24, false, "#5F6657"); y += 44;
+  ctx.fillStyle = "#46572A"; ctx.fillRect(M, y, W - 2 * M, 4); y += 24;
+  const block = (label, body) => { // title on its own line, names underneath
+    const lines = wrap(body || "—", W - 2 * M, 26);
+    ensure(40 + lines.length * 36 + 16);
+    text(label, W - M, 26, true); y += 40;
+    lines.forEach((l, i) => { ctx.font = font(26); ctx.fillStyle = "#1C2118"; ctx.fillText(l, W - M, y + i * 36); });
+    y += lines.length * 36 + 14;
+    ctx.fillStyle = "#D3D7C8"; ctx.fillRect(M, y - 7, W - 2 * M, 1);
+  };
+  if (d.type === "none") { block("משימות", "אין משימות ביום הזה"); return pages; }
+  block("תורן מטבח", d.kitchen ? nameOf(d.kitchen) : "—");
+  for (const sh of d.shifts) block(`${SCHED.KIND_LABEL[sh.kind]} ${rng(sh.start.slice(11), sh.end.slice(11))}`, names(sh.members));
+  if (d.hours.length) {
+    y += 10; ensure(120);
+    text("עמדה אחורית ומי ללא משימה", W - M, 30, true); y += 50;
+    const cTime = W - M, cG = W - M - 130, cF = W - M - 530, colF = cF - M;
+    const head = () => { ctx.fillStyle = "#E7E9DF"; ctx.fillRect(M, y - 6, W - 2 * M, 44); text("שעה", cTime, 24, true); text("עמדה", cG, 24, true); text("ללא משימה", cF, 24, true); y += 46; };
+    head();
+    d.hours.forEach((h, i) => {
+      const gl = wrap(names(h.guards) || "—", 380, 24, true), fl = wrap(names(SCHED.freeAt(inp, key, d, i)) || "—", colF, 21);
+      const rowH = Math.max(gl.length * 32, fl.length * 28) + 14;
+      if (y + rowH > Hh - M) { newPage(); head(); }
+      text(h.start.slice(11), cTime, 24, true);
+      gl.forEach((l, j) => { ctx.font = font(24, true); ctx.fillStyle = "#1C2118"; ctx.fillText(l, cG, y + j * 32); });
+      fl.forEach((l, j) => { ctx.font = font(21); ctx.fillStyle = "#5F6657"; ctx.fillText(l, cF, y + j * 28); });
+      y += rowH; ctx.fillStyle = "#D3D7C8"; ctx.fillRect(M, y - 7, W - 2 * M, 1);
+    });
+  }
+  return pages;
+}
+function pdfFromCanvases(pages) {
+  const enc = new TextEncoder(), parts = [], offsets = []; let len = 0;
+  const push = x => { const b = typeof x === "string" ? enc.encode(x) : x; parts.push(b); len += b.length; };
+  const obj = (n, body) => { offsets[n] = len; push(`${n} 0 obj\n`); body(); push("\nendobj\n"); };
+  push("%PDF-1.4\n%\xE2\xE3\xCF\xD3\n");
+  const n = pages.length, kids = pages.map((_, i) => `${3 + i * 3} 0 R`).join(" ");
+  obj(1, () => push("<< /Type /Catalog /Pages 2 0 R >>"));
+  obj(2, () => push(`<< /Type /Pages /Kids [${kids}] /Count ${n} >>`));
+  pages.forEach((cv, i) => {
+    const pg = 3 + i * 3, im = pg + 1, ct = pg + 2;
+    const jpg = Uint8Array.from(atob(cv.toDataURL("image/jpeg", 0.92).split(",")[1]), c => c.charCodeAt(0));
+    const content = "q 595.28 0 0 841.89 0 0 cm /Im0 Do Q";
+    obj(pg, () => push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Resources << /XObject << /Im0 ${im} 0 R >> >> /Contents ${ct} 0 R >>`));
+    obj(im, () => { push(`<< /Type /XObject /Subtype /Image /Width ${cv.width} /Height ${cv.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpg.length} >>\nstream\n`); push(jpg); push("\nendstream"); });
+    obj(ct, () => push(`<< /Length ${content.length} >>\nstream\n${content}\nendstream`));
+  });
+  const total = 3 + n * 3, xref = len;
+  push(`xref\n0 ${total}\n0000000000 65535 f \n`);
+  for (let i = 1; i < total; i++) push(String(offsets[i]).padStart(10, "0") + " 00000 n \n");
+  push(`trailer\n<< /Size ${total} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`);
+  const out = new Uint8Array(len); let o = 0; for (const p of parts) { out.set(p, o); o += p.length; }
+  return out;
+}
+async function exportDayPdf(key) {
+  try { if (document.fonts && document.fonts.ready) await document.fonts.ready; } catch {}
+  const bytes = pdfFromCanvases(rosterPdfPages(key));
+  const dl = window.claude && window.claude.use ? await window.claude.use("downloads") : null;
+  if (!dl) { toast("ההורדה לא זמינה בתצוגה הזו. פתחו את האפליקציה ב־claude.ai."); return; }
+  try { await dl.save({ filename: `shabtzak-${key}.pdf`, data: new Blob([bytes], { type: "application/pdf" }) }); toast("קובץ ה־PDF מוכן"); }
+  catch (e) { if (e && e.code !== "declined") toast("השמירה לא הצליחה. נסו שוב."); }
+}
+document.addEventListener("click", e => { const b = e.target.closest("[data-act='pdf']"); if (b && S.schedDay) exportDayPdf(S.schedDay); });
 
 init();
 </script>

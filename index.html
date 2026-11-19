@@ -158,7 +158,7 @@ h2 { font-family: var(--f-display); font-size: 1.05rem; font-weight: 600; margin
 .toast { position: fixed; z-index: 30; left: 50%; transform: translateX(-50%); bottom: calc(140px + env(safe-area-inset-bottom, 0px)); background: var(--ink); color: var(--bg); padding: 8px 16px; border-radius: 999px; font-weight: 700; }
 .empty { text-align: center; color: var(--muted); padding: 20px 8px; }
 @media (max-width: 420px) { .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } .srow { grid-template-columns: minmax(0, 5.5rem) minmax(0, 1fr) auto; } .cell { min-height: 56px; } .cell.res .cnt { font-size: .9rem; padding: 1px 3px; } }
-@media (prefers-reduced-motion: no-preference) { .sheet { animation: up .18s ease-out; } @keyframes up { from { transform: translateY(16px); opacity: .6; } } }
+@media (prefers-reduced-motion: no-preference) { .sheet { animation: up .18s ease-out; } @keyframes up { from { transform: translateY(16px); } } }
 .reportbox { white-space: pre-wrap; margin: 0; background: var(--surface-2); border-radius: 10px; padding: 12px; font-family: var(--f-body); font-size: .98rem; line-height: 1.6; overflow-wrap: anywhere; }
 a.btn { text-decoration: none; display: inline-block; text-align: center; }
 .btn.wa { background: var(--ok); border-color: var(--ok); color: var(--surface); }
@@ -187,6 +187,9 @@ button.mchip { cursor: pointer; }
 .ftable th { color: var(--muted); font-size: .78rem; }
 .picklist .pick { width: 100%; display: flex; justify-content: space-between; gap: 8px; border: 1px solid var(--line); background: var(--surface); border-radius: 10px; padding: 8px 10px; text-align: right; }
 .picklist .pick:disabled { opacity: .5; cursor: not-allowed; }
+.diff { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.diff li { background: var(--surface-2); border-radius: 10px; padding: 8px 10px; font-size: .9rem; }
+.diff .plus { color: var(--ok); } .diff .minus { color: var(--bad); }
 .vday summary { cursor: pointer; padding: 2px 0; }
 .roles { display: flex; flex-wrap: wrap; gap: 4px; }
 .roles button { border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 2px 8px; font-size: .75rem; font-weight: 700; color: var(--muted); }
@@ -759,7 +762,12 @@ const SCHED = (() => {
     const inC = new Set(cands);
     let members = [...new Set(locked || [])].filter(id => inC.has(id)).slice(0, n);
     const lockedSet = new Set(members);
-    for (const id of keep || []) if (inC.has(id) && !members.includes(id) && members.length < n) members.push(id);
+    const keepValid = (keep || []).filter(id => inC.has(id) && !members.includes(id));
+    const room = n - members.length;
+    if (keepValid.length > room) { // over capacity (e.g. someone was moved in): drop the most loaded non-locked
+      const best = new Set([...keepValid].sort((a, b) => score(a) - score(b)).slice(0, Math.max(0, room)));
+      members.push(...keepValid.filter(id => best.has(id)));
+    } else members.push(...keepValid);
     const pool = () => cands.filter(id => !members.includes(id)).sort((a, b) => score(a) - score(b));
     for (const r of reqs) {
       if (members.some(id => has(c, id, r))) continue;
@@ -784,6 +792,17 @@ const SCHED = (() => {
     if (type !== "post" && type !== "patrol") return doc;
     const [d0, d1] = dayWindow(key);
     const same = !!prev && prev.type === type;
+    // manual (locked) placements win: never pick someone for a slot that clashes with where he was locked
+    const lockedIn = (t0, t1, opt) => {
+      const out = new Set(); if (!same) return out;
+      for (const sh of prev.shifts || []) if (T(sh.start) < t1 && T(sh.end) > t0) (sh.locked || []).forEach(x => out.add(x));
+      for (const h of prev.hours || []) {
+        const a = T(h.start); if (!(a < t1 && a + HOUR > t0)) continue;
+        if (h.guardLocked && h.guard) out.add(h.guard);
+        if (!(opt && opt.allowB)) (h.bLocked || []).forEach(x => out.add(x));
+      }
+      return out;
+    };
     const frozen = t => t < c.now;
     const repair = mode === "repair";
 
@@ -796,7 +815,8 @@ const SCHED = (() => {
       const midDay = same && frozen(d0);
       const runningNow = new Set(midDay ? [...(prev.shifts || []).filter(x => T(x.start) <= c.now && T(x.end) > c.now).flatMap(x => x.members || []), ...(prev.hours || []).filter(h => T(h.start) <= c.now && T(h.start) + HOUR > c.now).map(h => h.guard)] : []);
       const laterToday = new Set(midDay ? [...(prev.shifts || []).filter(x => T(x.start) > c.now).flatMap(x => x.members || []), ...(prev.hours || []).filter(h => T(h.start) > c.now).map(h => h.guard)] : []);
-      const cands = c.ids.filter(id => free(c, id, k0, d1) && !busyAt(c, id, k0, k0 + 1) && !runningNow.has(id));
+      const lockedToday = lockedIn(k0, d1, { allowB: true });
+      const cands = c.ids.filter(id => free(c, id, k0, d1) && !busyAt(c, id, k0, k0 + 1) && !runningNow.has(id) && (id === pk || !lockedToday.has(id)));
       if (pk && cands.includes(pk) && (pkLocked || repair)) { doc.kitchen = pk; doc.kitchenLocked = pkLocked; }
       else {
         // never take someone whose role the day's missions cannot do without
@@ -823,15 +843,32 @@ const SCHED = (() => {
       const ps = same && prev.shifts ? prev.shifts[i] : null;
       const locked = ps && Array.isArray(ps.locked) ? ps.locked : [];
       let members;
-      if (ps && frozen(t0)) members = [...(ps.members || [])];
-      else {
-        const cands = c.ids.filter(id => id !== doc.kitchen && free(c, id, t0, t1) && !busyAt(c, id, t0, t1));
-        const score = id => {
+      const score = id => {
           const st = c.stats[id];
           let v = st.load + (kind === "carmelA" ? st.A : st.patrol) * 0.5 + tb(id, s);
           if (st.lastEnd && t0 - st.lastEnd < 6 * HOUR) v += 200; // avoid back-to-back
           return v;
         };
+      if (ps && frozen(t0)) {
+        members = [...(ps.members || [])];
+        if (members.length > SIZE[kind] && t1 > c.now) { // someone was moved into a running full shift: drop the most loaded unlocked
+          const lk = new Set(locked);
+          while (members.length > SIZE[kind]) {
+            const drop = members.filter(id => !lk.has(id) && !REQS[kind].some(r => has(c, id, r) && members.filter(m => has(c, m, r)).length === 1)).sort((a, b) => score(b) - score(a))[0];
+            if (!drop) break; members = members.filter(x => x !== drop);
+          }
+        }
+        if (members.length < SIZE[kind] && t1 > c.now) { // a running shift lost someone: fill for the rest of it
+          const w0 = Math.max(t0, c.now);
+          const elsewhere = lockedIn(w0, t1);
+          // a shift covers its whole window, so whoever already held an hour inside it (guard / carmel B) can't join late
+          for (const h of (same && prev.hours) || []) { const a = T(h.start); if (a < c.now && a < t1 && a + HOUR > t0) { if (h.guard) elsewhere.add(h.guard); (h.carmelB || []).forEach(x => elsewhere.add(x)); } }
+          const cands = c.ids.filter(id => members.includes(id) || (id !== doc.kitchen && free(c, id, w0, t1) && !busyAt(c, id, w0, t1) && !elsewhere.has(id)));
+          members = pickGroup(c, SIZE[kind], cands, REQS[kind], score, members, [], null);
+        }
+      } else {
+        const elsewhere = lockedIn(t0, t1); locked.forEach(x => elsewhere.delete(x));
+        const cands = c.ids.filter(id => id !== doc.kitchen && free(c, id, t0, t1) && !busyAt(c, id, t0, t1) && !elsewhere.has(id));
         // a second holder of a required role is only taken if others remain for the next shift / carmel B
         const block = (id, mem) => {
           for (const r of REQS[kind]) if (has(c, id, r) && mem.some(m => has(c, m, r))) return true;
@@ -857,10 +894,13 @@ const SCHED = (() => {
         const sh = doc.shifts.find(x => T(x.start) <= t && T(x.end) > t);
         const A = sh ? sh.members : [];
         let guard = null, B = [];
-        if (ph && frozen(t)) { guard = ph.guard || null; B = [...(ph.carmelB || [])]; }
+        const running = ph && frozen(t);
+        const clean = ph && ph.guard && !A.includes(ph.guard) && ph.guard !== doc.kitchen && (ph.carmelB || []).length === SIZE.carmelB && !(ph.carmelB || []).some(x => A.includes(x) || x === ph.guard);
+        if (running && (te <= c.now || clean)) { guard = ph.guard || null; B = [...(ph.carmelB || [])]; }
         else {
-          const base = c.ids.filter(id => !A.includes(id) && free(c, id, t, te) && !busyAt(c, id, t, te));
-          const gc = base.filter(id => id !== doc.kitchen);
+          const w0 = running ? Math.max(t, c.now) : t;
+          const base = c.ids.filter(id => !A.includes(id) && free(c, id, w0, te) && !busyAt(c, id, w0, te));
+          const gc = base.filter(id => id !== doc.kitchen && !(ph && (ph.bLocked || []).includes(id)));
           const cmdAvail = base.filter(id => has(c, id, ROLE.commander)).length;
           const gScore = id => {
             const st = c.stats[id];
@@ -872,11 +912,11 @@ const SCHED = (() => {
             return v;
           };
           if (ph && ph.guardLocked && gc.includes(ph.guard)) guard = ph.guard;
-          else if (repair && ph && gc.includes(ph.guard)) guard = ph.guard;
+          else if ((repair || running) && ph && gc.includes(ph.guard)) guard = ph.guard;
           else guard = gc.sort((a, b) => gScore(a) - gScore(b))[0] || null;
           const bc = base.filter(id => id !== guard);
           const bScore = id => (prevB.includes(id) ? -1000 : 0) + (id === doc.kitchen ? -50 : 0) + c.stats[id].B + c.stats[id].load * 0.2 + tb(id, s + "b");
-          B = pickGroup(c, SIZE.carmelB, bc, REQS.carmelB, bScore, ph && ph.bLocked, repair && ph ? ph.carmelB : []);
+          B = pickGroup(c, SIZE.carmelB, bc, REQS.carmelB, bScore, ph && ph.bLocked, (repair || running) && ph ? ph.carmelB : []);
         }
         if (guard) book(c, guard, t, te, "guard");
         for (const id of B) if (c.stats[id]) { c.stats[id].B += (te - t) / HOUR; c.stats[id].load += 0.3 * (te - t) / HOUR; }
@@ -892,14 +932,96 @@ const SCHED = (() => {
 
   /* input: { soldiers:[{id,name,active,roles}], absences:[{soldierId,start,end}], days:[key], dayTypes:{key:type}, now }
      existing: { key: doc }  mode: "rebuild" (keep only locked + past) | "repair" (keep every still-valid assignment) */
-  function buildAll(input, existing, mode) {
+  // opts.rebuildAfter = key: days after `key` are rebuilt for fairness (locks and past kept), the rest repaired.
+  function buildAll(input, existing, mode, opts) {
     const c = makeCtx(input), docs = {};
+    const after = opts && opts.rebuildAfter;
     for (const key of [...(input.days || [])].sort()) {
       const type = (input.dayTypes && input.dayTypes[key]) || "post";
       if (!(existing && existing[key]) && dayWindow(key)[1] <= c.now) continue; // never invent a roster for days already over
-      docs[key] = buildDay(c, key, type, (existing && existing[key]) || null, mode || "repair");
+      docs[key] = buildDay(c, key, type, (existing && existing[key]) || null, after && key > after ? "rebuild" : (mode || "repair"));
     }
     return { docs, stats: c.stats };
+  }
+
+
+  /* ---------- editing (manual changes that ripple through the roster) ---------- */
+  // Every slot of a day as { ref, kind, t0, t1, label } (ref: "k" | "s|i" | "g|i" | "b|i").
+  function slotsOf(key, d) {
+    const [d0, d1] = dayWindow(key), out = [];
+    if (!d || (d.type !== "post" && d.type !== "patrol")) return out;
+    out.push({ ref: "k", kind: "kitchen", t0: d0, t1: d1, label: "תורן מטבח" });
+    (d.shifts || []).forEach((sh, i) => out.push({ ref: `s|${i}`, kind: sh.kind, t0: T(sh.start), t1: T(sh.end), label: `${KIND_LABEL[sh.kind]} ${sh.start.slice(11)}–${sh.end.slice(11)}` }));
+    (d.hours || []).forEach((h, i) => {
+      const t0 = T(h.start), t1 = Math.min(t0 + HOUR, d1), hh = h.start.slice(11);
+      out.push({ ref: `g|${i}`, kind: "guard", t0, t1, label: `עמדה ${hh}` });
+      out.push({ ref: `b|${i}`, kind: "carmelB", t0, t1, label: `כרמל ב׳ ${hh}` });
+    });
+    return out;
+  }
+  function holders(d, ref) {
+    const [k, i] = ref.split("|");
+    if (k === "k") return d.kitchen ? [d.kitchen] : [];
+    if (k === "s") return d.shifts[+i].members || [];
+    if (k === "g") return d.hours[+i].guard ? [d.hours[+i].guard] : [];
+    return d.hours[+i].carmelB || [];
+  }
+  // which slot kinds may be held together at overlapping times
+  const COMPAT = { kitchen: new Set(["carmelB"]), carmelB: new Set(["kitchen"]), carmelA: new Set(), patrol: new Set(), guard: new Set() };
+  function removeFrom(d, ref, id) {
+    const [k, i] = ref.split("|");
+    if (k === "k") { if (d.kitchen === id) { d.kitchen = null; d.kitchenLocked = false; } return; }
+    if (k === "s") { const sh = d.shifts[+i]; sh.members = sh.members.filter(x => x !== id); sh.locked = (sh.locked || []).filter(x => x !== id); return; }
+    const h = d.hours[+i];
+    if (k === "g") { if (h.guard === id) { h.guard = null; h.guardLocked = false; } return; }
+    h.carmelB = h.carmelB.filter(x => x !== id); h.bLocked = (h.bLocked || []).filter(x => x !== id);
+  }
+  // Put `id` into slot `ref` (replacing `replaceId` if given), lock it, and take `id` out of every
+  // other not-yet-finished slot of the day that clashes with it. Freed places are refilled by buildAll.
+  function assignInDay(key, day, ref, id, replaceId, now) {
+    const d = JSON.parse(JSON.stringify(day));
+    const all = slotsOf(key, d), target = all.find(x => x.ref === ref);
+    if (!target) return d;
+    for (const sl of all) {
+      if (sl.ref === ref || sl.t1 <= now || !holders(d, sl.ref).includes(id)) continue;
+      const overlap = sl.t0 < target.t1 && sl.t1 > target.t0;
+      if (overlap && !COMPAT[target.kind].has(sl.kind)) removeFrom(d, sl.ref, id);
+    }
+    const [k, i] = ref.split("|");
+    if (replaceId) removeFrom(d, ref, replaceId);
+    if (k === "k") { d.kitchen = id; d.kitchenLocked = true; }
+    else if (k === "s") { const sh = d.shifts[+i]; if (!sh.members.includes(id)) sh.members.push(id); sh.locked = [...new Set([...(sh.locked || []), id])]; }
+    else if (k === "g") { const h = d.hours[+i]; h.guard = id; h.guardLocked = true; }
+    else { const h = d.hours[+i]; if (!h.carmelB.includes(id)) h.carmelB.push(id); h.bLocked = [...new Set([...(h.bLocked || []), id])]; }
+    return d;
+  }
+  // Every not-yet-finished slot of `fromId` on that day goes to `toId`.
+  function replaceInDay(key, day, fromId, toId, now) {
+    let d = JSON.parse(JSON.stringify(day));
+    for (const sl of slotsOf(key, d)) if (sl.t1 > now && holders(d, sl.ref).includes(fromId)) d = assignInDay(key, d, sl.ref, toId, fromId, now);
+    return d;
+  }
+  // Move `id` from slot `fromRef` to slot `toRef` (whoever held a single-person slot there is freed).
+  function moveInDay(key, day, fromRef, toRef, id, now) {
+    const d = JSON.parse(JSON.stringify(day));
+    removeFrom(d, fromRef, id);
+    const k = toRef.split("|")[0];
+    const single = k === "k" || k === "g";
+    const cur = single ? holders(d, toRef)[0] : null;
+    return assignInDay(key, d, toRef, id, cur && cur !== id ? cur : null, now);
+  }
+  // Per-soldier summary of what changed on one day: { id: { added:[text], removed:[text] } }
+  function diffDay(key, oldDay, newDay) {
+    const ids = new Set();
+    for (const d of [oldDay, newDay]) if (d) { if (d.kitchen) ids.add(d.kitchen); (d.shifts || []).forEach(sh => sh.members.forEach(x => ids.add(x))); (d.hours || []).forEach(h => { if (h.guard) ids.add(h.guard); (h.carmelB || []).forEach(x => ids.add(x)); }); }
+    const txt = a => `${a.what} ${a.start.slice(11)}–${a.end.slice(11)}`;
+    const out = {};
+    for (const id of ids) {
+      const a = new Set(assignmentsOf({ [key]: oldDay || {} }, id).map(txt)), b = new Set(assignmentsOf({ [key]: newDay || {} }, id).map(txt));
+      const added = [...b].filter(x => !a.has(x)), removed = [...a].filter(x => !b.has(x));
+      if (added.length || removed.length) out[id] = { added, removed };
+    }
+    return out;
   }
 
   // Hard-rule check of a roster; returns { key: [problem, ...] }.
@@ -929,18 +1051,19 @@ const SCHED = (() => {
         const t0 = T(h.start), t1 = Math.min(t0 + HOUR, d1), lab = `שעה ${h.start.slice(11)}`;
         const sh = (d.shifts || []).find(x => T(x.start) <= t0 && T(x.end) > t0);
         const A = sh ? sh.members : [];
+        const over = t1 <= c.now; // finished hours are history: their overlaps are not reported
         if (!h.guard) list.push(`${lab}: אין שומר בעמדה`);
         else {
-          if (A.includes(h.guard)) list.push(`${lab}: השומר (${nm(h.guard)}) בכרמל א׳`);
+          if (A.includes(h.guard) && !over) list.push(`${lab}: השומר (${nm(h.guard)}) בכרמל א׳`);
           if (h.guard === d.kitchen && t1 > c.now) list.push(`${lab}: תורן המטבח שומר`);
-          chk(h.guard, t0, t1, `${lab} עמדה`); busy(h.guard, t0, t1, `${lab} עמדה`, key);
+          chk(h.guard, t0, t1, `${lab} עמדה`); if (!over) busy(h.guard, t0, t1, `${lab} עמדה`, key);
         }
         const B = h.carmelB || [];
         if (B.length < SIZE.carmelB) list.push(`${lab}: בכרמל ב׳ חסרים ${SIZE.carmelB - B.length}`);
         if (!B.some(id => has(c, id, ROLE.commander))) list.push(`${lab}: אין מפקד בכרמל ב׳`);
         if (new Set(B).size !== B.length) list.push(`${lab}: לוחם כפול בכרמל ב׳`);
         for (const id of B) {
-          if (A.includes(id)) list.push(`${lab}: ${nm(id)} גם בכרמל א׳ וגם בכרמל ב׳`);
+          if (A.includes(id) && !over) list.push(`${lab}: ${nm(id)} גם בכרמל א׳ וגם בכרמל ב׳`);
           if (id === h.guard) list.push(`${lab}: ${nm(id)} גם בעמדה וגם בכרמל ב׳`);
           chk(id, t0, t1, `${lab} כרמל ב׳`);
         }
@@ -977,7 +1100,7 @@ const SCHED = (() => {
     return out.sort((a, b) => a.start.localeCompare(b.start));
   }
 
-  return { buildAll, validate, assignmentsOf, dayWindow, template, ROLE, ROLE_LABEL, SIZE, KIND_LABEL, HOUR, T, fmt, plusDays };
+  return { buildAll, validate, assignmentsOf, slotsOf, holders, assignInDay, replaceInDay, moveInDay, diffDay, dayWindow, template, ROLE, ROLE_LABEL, SIZE, KIND_LABEL, HOUR, T, fmt, plusDays };
 })();
 /* ==== SCHEDULER ENGINE END ==== */
 
@@ -1132,63 +1255,75 @@ function viewViewer() {
     <div class="field"><label for="myId">המשימות שלי</label><select id="myId" class="inp"><option value="">כל הצוות, כל הימים</option>${opts}</select></div></div>${body}`;
 }
 
-/* ---------- manual swap ---------- */
+/* ---------- manual editing: replace a fighter / move to another mission, with preview ---------- */
 const smodal = document.getElementById("smodal");
-function slotInfo(ref) {
-  const [kind, a, b] = ref.split("|");
-  const k = S.schedDay, d = S.schedule[k], [d0, d1] = SCHED.dayWindow(k);
-  if (kind === "k") return { title: "תורן מטבח", t0: d0, t1: d1, cur: d.kitchen };
-  if (kind === "s") { const sh = d.shifts[+a]; return { title: `${SCHED.KIND_LABEL[sh.kind]} ${sh.start.slice(11)}–${sh.end.slice(11)}`, t0: ms(sh.start), t1: ms(sh.end), cur: b === "+" ? null : b, idx: +a }; }
-  const h = d.hours[+a]; const t0 = ms(h.start);
-  if (kind === "g") return { title: `עמדה אחורית ${h.start.slice(11)}`, t0, t1: t0 + SCHED.HOUR, cur: h.guard, idx: +a };
-  return { title: `כרמל ב׳ ${h.start.slice(11)}`, t0, t1: t0 + SCHED.HOUR, cur: b === "+" ? null : b, idx: +a };
+const rng = t => esc(t).replace(/(\d\d:\d\d)–(\d\d:\d\d)/g, (m, a, b) => span2(a, b)); // keep time ranges left-to-right
+function engineRef(ref) { const [k, i] = ref.split("|"); return k === "k" ? "k" : `${k}|${i}`; }
+function slotHolder(ref) {
+  const [k, i, b] = ref.split("|"), d = S.schedule[S.schedDay];
+  if (k === "k") return d.kitchen || null;
+  if (k === "g") return d.hours[+i].guard || null;
+  return b && b !== "+" ? b : null;
 }
-function busyReason(id, ref, info) {
-  const k = S.schedDay, d = S.schedule[k];
-  const s = S.soldiers.find(x => x.id === id);
-  if (!s || s.active === false) return "לא בסד״כ";
-  if (S.absences.some(a => a.soldierId === id && ms(a.start) < info.t1 && ms(a.end) > info.t0)) return "לא זמין (יציאה)";
-  const kind = ref.split("|")[0];
-  for (const [i, sh] of (d.shifts || []).entries()) if (!(kind === "s" && i === info.idx) && sh.members.includes(id) && ms(sh.start) < info.t1 && ms(sh.end) > info.t0) return `ב${SCHED.KIND_LABEL[sh.kind]}`;
-  if (kind !== "k" && kind !== "b" && d.kitchen === id) return "תורן מטבח";
-  if (kind === "k") { if ((d.shifts || []).some(sh => sh.members.includes(id))) return `משובץ ב${d.type === "post" ? "כרמל א׳" : "סיור"}`; }
-  for (const [i, h] of (d.hours || []).entries()) {
-    const t0 = ms(h.start); if (!(t0 < info.t1 && t0 + SCHED.HOUR > info.t0)) continue;
-    if (h.guard === id && !(kind === "g" && i === info.idx)) return "בעמדה";
-    if (kind !== "k" && (h.carmelB || []).includes(id) && !(kind === "b" && i === info.idx)) return "בכרמל ב׳";
-  }
-  return "";
+function slotLabelOf(ref) { const sl = SCHED.slotsOf(S.schedDay, S.schedule[S.schedDay]).find(x => x.ref === engineRef(ref)); return sl ? sl.label : ""; }
+function absentDuring(id, t0, t1) { return S.absences.some(a => a.soldierId === id && ms(a.start) < t1 && ms(a.end) > t0); }
+// unfinished slots of the day held by `id`
+function liveSlotsOf(id) { const k = S.schedDay, d = S.schedule[k], now = Date.now(); return SCHED.slotsOf(k, d).filter(sl => sl.t1 > now && SCHED.holders(d, sl.ref).includes(id)); }
+function candidateRows(windows, excludeId, mineRefs) {
+  return activeSoldiers().filter(s => s.id !== excludeId).map(s => {
+    const absent = windows.some(w => absentDuring(s.id, w.t0, w.t1));
+    const clashes = liveSlotsOf(s.id).filter(sl => !mineRefs.includes(sl.ref) && windows.some(w => sl.t0 < w.t1 && sl.t1 > w.t0));
+    const roles = (s.roles || []).map(r => `<i>${ROLE_SHORT[r]}</i>`).join("");
+    const note = absent ? "לא זמין (יציאה)" : clashes.length ? `כרגע ב${clashes.slice(0, 2).map(x => x.label).join(", ")}${clashes.length > 2 ? "…" : ""} – ימולא מחליף` : "פנוי";
+    return `<li><button class="pick" data-pickid="${esc(s.id)}" ${absent ? "disabled" : ""}><span>${esc(s.name)} <span class="rb">${roles}</span></span><span class="muted">${rng(note)}</span></button></li>`;
+  }).join("");
 }
 function drawSwap() {
   if (!S.swap) { smodal.innerHTML = ""; return; }
-  const info = slotInfo(S.swap.ref);
-  const rows = activeSoldiers().filter(s => s.id !== info.cur).map(s => {
-    const why = busyReason(s.id, S.swap.ref, info);
-    const roles = (s.roles || []).map(r => `<i>${ROLE_SHORT[r]}</i>`).join("");
-    return `<li><button class="pick" data-pickid="${esc(s.id)}" ${why ? "disabled" : ""}><span>${esc(s.name)} <span class="rb">${roles}</span></span><span class="muted">${why || "פנוי"}</span></button></li>`;
-  }).join("");
-  smodal.innerHTML = `<div class="overlay" data-act="sclose"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="swt">
-    <div class="row"><h2 id="swt">${esc(info.title)}${info.cur ? ` · במקום ${esc(nameOf(info.cur))}` : ""}</h2><button class="btn small ghost" data-act="sclose">סגירה</button></div>
-    <div class="muted" style="font-size:.85rem">הלוחם שתבחר יינעל 🔒 בשיבוץ הזה. המערכת תתקן אוטומטית את שאר השיבוצים אם צריך.</div>
-    ${info.cur && S.swap.locked ? `<button class="btn" data-act="unlock">שחרור הנעילה (המערכת תוכל להחליף)</button>` : ""}
-    <ul class="list picklist">${rows}</ul></div></div>`;
+  const k = S.schedDay, d = S.schedule[k]; if (!d) { S.swap = null; smodal.innerHTML = ""; return; }
+  const X = slotHolder(S.swap.ref), lbl = slotLabelOf(S.swap.ref);
+  const wrap = inner => `<div class="overlay" data-act="sclose"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="swt">${inner}</div></div>`;
+  // preview step
+  if (S.swap.preview) {
+    const P = S.swap.preview;
+    const lines = Object.entries(P.diff).map(([id, ch]) => `<li><b>${esc(nameOf(id))}</b>${ch.added.length ? `<div class="plus">+ ${ch.added.map(rng).join(" · ")}</div>` : ""}${ch.removed.length ? `<div class="minus">− ${ch.removed.map(rng).join(" · ")}</div>` : ""}</li>`).join("");
+    smodal.innerHTML = wrap(`<div class="row"><h2 id="swt">${esc(P.title)}</h2><button class="btn small ghost" data-act="sclose">סגירה</button></div>
+      <div class="lbl">מה ישתנה ב${esc(longDate(k))}</div><ul class="diff">${lines || "<li>אין שינוי</li>"}</ul>
+      ${P.futureDays ? `<div class="muted" style="font-size:.88rem">${P.futureDays} ימים הבאים יאוזנו מחדש כדי לשמור על חלוקה הוגנת (שיבוצים נעולים לא ישתנו).</div>` : ""}
+      ${P.problems.length ? `<div class="probs" role="alert"><b>שימו לב:</b><ul>${P.problems.slice(0, 6).map(p => `<li>${esc(p)}</li>`).join("")}</ul></div>` : ""}
+      <div class="actions"><button class="btn primary" data-act="sconfirm">אישור ושמירה</button><button class="btn" data-act="sback">חזרה</button></div>`);
+    return;
+  }
+  const tab = X ? (S.swap.tab || "replace") : "assign";
+  let body;
+  if (tab === "move") {
+    const now = Date.now(), cur = engineRef(S.swap.ref);
+    const opts = SCHED.slotsOf(k, d).filter(sl => sl.t1 > now && sl.ref !== cur && !SCHED.holders(d, sl.ref).includes(X) && !absentDuring(X, Math.max(sl.t0, now), sl.t1));
+    const grp = (kinds, title) => { const o = opts.filter(sl => kinds.includes(sl.kind)); return o.length ? `<optgroup label="${title}">${o.map(sl => `<option value="${sl.ref}">${rng(sl.label)}${sl.kind === "guard" && SCHED.holders(d, sl.ref)[0] ? ` (במקום ${esc(nameOf(SCHED.holders(d, sl.ref)[0]))})` : ""}</option>`).join("")}</optgroup>` : ""; };
+    body = opts.length ? `<div class="field"><label for="moveTo">להעביר את ${esc(nameOf(X))} אל</label><select id="moveTo" class="inp">${grp(["kitchen"], "מטבח")}${grp(["carmelA", "patrol"], "משמרות")}${grp(["guard"], "עמדה אחורית")}${grp(["carmelB"], "כרמל ב׳")}</select></div>
+      <div class="muted" style="font-size:.85rem">${esc(nameOf(X))} ייצא מ${esc(lbl)} ויינעל במשימה החדשה. המקום שהתפנה ימולא אוטומטית.</div>
+      <div class="actions"><button class="btn primary" data-act="movego">המשך לתצוגה מקדימה</button></div>` : `<div class="empty">אין משימה פנויה להעברה.</div>`;
+  } else {
+    const mine = X ? liveSlotsOf(X) : [];
+    const [kk, ii] = S.swap.ref.split("|");
+    const target = SCHED.slotsOf(k, d).find(sl => sl.ref === engineRef(S.swap.ref));
+    const windows = tab === "replace" ? mine.map(sl => ({ t0: Math.max(sl.t0, Date.now()), t1: sl.t1 })) : [{ t0: Math.max(target.t0, Date.now()), t1: target.t1 }];
+    body = `<div class="muted" style="font-size:.85rem">${tab === "replace" ? `המחליף ייכנס לכל המשימות של ${esc(nameOf(X))} היום${mine.length > 1 ? ` (${mine.length} משימות)` : ""} וינעל בהן. אם הוא משובץ במקום אחר באותן שעות, המקום שלו ימולא אוטומטית.` : `הלוחם שתבחר יינעל במשימה. אם הוא משובץ במקום אחר באותה שעה, המקום שלו ימולא אוטומטית.`}</div>
+      <ul class="list picklist">${candidateRows(windows, X, mine.map(x => x.ref))}</ul>`;
+  }
+  const tabs = X ? `<div class="seg" role="group"><button data-stab="replace" aria-pressed="${tab === "replace"}">החלפה בלוחם אחר</button><button data-stab="move" aria-pressed="${tab === "move"}">העברה למשימה אחרת</button></div>` : "";
+  smodal.innerHTML = wrap(`<div class="row"><h2 id="swt">${rng(lbl)}${X ? ` · ${esc(nameOf(X))}` : " · חסר"}</h2><button class="btn small ghost" data-act="sclose">סגירה</button></div>
+    ${tabs}${X && S.swap.locked ? `<button class="btn small" data-act="unlock">שחרור הנעילה (המערכת תוכל להחליף)</button>` : ""}${body}`);
 }
-async function applySwap(newId) {
-  const ref = S.swap.ref, [kind, a, b] = ref.split("|"), k = S.schedDay;
-  const d = JSON.parse(JSON.stringify(S.schedule[k]));
-  const lockAdd = (arr, id) => { const x = (arr || []).filter(v => v !== b); if (id && !x.includes(id)) x.push(id); return x; };
-  if (kind === "k") { d.kitchen = newId; d.kitchenLocked = !!newId; }
-  else if (kind === "s") { const sh = d.shifts[+a]; sh.members = b === "+" ? [...sh.members, newId] : sh.members.map(x => x === b ? newId : x); sh.locked = lockAdd(sh.locked, newId); }
-  else if (kind === "g") { const h = d.hours[+a]; h.guard = newId; h.guardLocked = !!newId; }
-  else { const h = d.hours[+a]; h.carmelB = b === "+" ? [...h.carmelB, newId] : h.carmelB.map(x => x === b ? newId : x); h.bLocked = lockAdd(h.bLocked, newId); }
-  const existing = { ...S.schedule, [k]: d };
-  const { docs } = SCHED.buildAll(schedInput(), existing, "repair");
-  S.swap = null; drawSwap();
-  await saveSchedule({ ...docs, [k]: docs[k] });
-  toast("השיבוץ עודכן");
+function makePreview(edited, title) {
+  const k = S.schedDay, input = schedInput();
+  const { docs } = SCHED.buildAll(input, { ...S.schedule, [k]: edited }, "repair", { rebuildAfter: k });
+  const futureDays = Object.keys(docs).filter(x => x > k && canon(docs[x]) !== canon(S.schedule[x] || null)).length;
+  S.swap.preview = { title, docs, diff: SCHED.diffDay(k, S.schedule[k], docs[k]), futureDays, problems: SCHED.validate(input, docs)[k] || [] };
+  drawSwap();
 }
 async function unlockSlot() {
-  const ref = S.swap.ref, [kind, a, b] = ref.split("|"), k = S.schedDay;
+  const [kind, a, b] = S.swap.ref.split("|"), k = S.schedDay;
   const d = JSON.parse(JSON.stringify(S.schedule[k]));
   if (kind === "k") d.kitchenLocked = false;
   else if (kind === "s") d.shifts[+a].locked = (d.shifts[+a].locked || []).filter(x => x !== b);
@@ -1197,6 +1332,30 @@ async function unlockSlot() {
   S.swap = null; drawSwap();
   await saveSchedule({ [k]: d }); toast("הנעילה שוחררה");
 }
+document.addEventListener("click", async e => {
+  const el = e.target.closest("button"); if (!el || !S.swap || !S.isOwner) return;
+  const d = el.dataset, k = S.schedDay, day = S.schedule[k], now = Date.now();
+  if (d.stab) { S.swap.tab = d.stab; drawSwap(); return; }
+  if (d.act === "sback") { S.swap.preview = null; drawSwap(); return; }
+  if (d.pickid) {
+    const X = slotHolder(S.swap.ref), Y = d.pickid;
+    if (X) makePreview(SCHED.replaceInDay(k, day, X, Y, now), `${nameOf(Y)} במקום ${nameOf(X)}`);
+    else makePreview(SCHED.assignInDay(k, day, engineRef(S.swap.ref), Y, null, now), `שיבוץ ${nameOf(Y)} ל${slotLabelOf(S.swap.ref)}`);
+    return;
+  }
+  if (d.act === "movego") {
+    const X = slotHolder(S.swap.ref), to = document.getElementById("moveTo").value;
+    const toLabel = SCHED.slotsOf(k, day).find(sl => sl.ref === to).label;
+    makePreview(SCHED.moveInDay(k, day, engineRef(S.swap.ref), to, X, now), `העברת ${nameOf(X)} ל${toLabel}`);
+    return;
+  }
+  if (d.act === "sconfirm") {
+    const docs = S.swap.preview.docs; S.swap = null; drawSwap();
+    const n = await saveSchedule(docs); toast(n ? `השבצ״ק עודכן (${n} ימים)` : "אין שינוי");
+    return;
+  }
+  if (d.act === "unlock") { await unlockSlot(); return; }
+});
 
 /* ---------- duty roster: events ---------- */
 document.addEventListener("click", async e => {
@@ -1226,10 +1385,8 @@ document.addEventListener("click", async e => {
   if (d.swap) {
     const [kind, a, b] = d.swap.split("|"); const day = S.schedule[S.schedDay];
     const locked = kind === "k" ? day.kitchenLocked : kind === "s" ? (day.shifts[+a].locked || []).includes(b) : kind === "g" ? day.hours[+a].guardLocked : (day.hours[+a].bLocked || []).includes(b);
-    S.swap = { ref: d.swap, locked }; drawSwap(); return;
+    S.swap = { ref: d.swap, locked, tab: "replace", preview: null }; drawSwap(); return;
   }
-  if (d.pickid && S.swap) { await applySwap(d.pickid); return; }
-  if (d.act === "unlock" && S.swap) { await unlockSlot(); return; }
   if (d.role) {
     const [sid, role] = d.role.split("|"); const s = S.soldiers.find(x => x.id === sid); if (!s) return;
     const roles = new Set(s.roles || []); roles.has(role) ? roles.delete(role) : roles.add(role);

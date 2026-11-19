@@ -57,19 +57,17 @@ function onlyUnavoidable(input, docs, problems) {
       if (usable.length >= need + (sh.kind === "patrol" && r === "commander" ? 0 : 0) && freeHolders.length >= need + otherNeeds) return `avoidable: ${k} ${p} (free: ${freeHolders.map(s => s.name)})`;
       continue;
     }
-    const m2 = p.match(/^שעה (\d\d:\d\d): (בכרמל פנים חסרים|חסר שומר|חסרים \d+ שומרים|אין מפקד בכרמל פנים)/);
+    const m2 = p.match(/^שעה (\d\d:\d\d): (חסר שומר|חסרים \d+ שומרים)/);
     if (m2) {
       const h = d.hours.find(x => x.start.endsWith(m2[1])); const t0 = T(h.start);
       const present = soldiers.filter(s => !absentAt(input.absences, s.id, t0, t0 + H));
       const hs = S.hourSpec(t0, S.V);
-      const needed = 8 + hs.guards + hs.inner - (S.kitchenMayGuard(t0, S.V) ? 0 : 0);
-      if (m2[2].startsWith("אין מפקד")) {
-        const A = d.shifts.find(x => T(x.start) <= t0 && T(x.end) > t0).members;
-        const cmdFree = present.filter(s => s.roles.includes("commander") && !A.includes(s.id));
-        if (cmdFree.length >= 1 && present.length >= needed) return `avoidable: ${k} ${p}`;
-        continue;
-      }
-      if (present.length >= needed) return `avoidable: ${k} ${p} (present ${present.length}, need ${needed})`;
+      // 8 outer post + guards, and the previous/next hour's guards may not guard again (no two hours in a row)
+      const i = d.hours.indexOf(h);
+      const blocked = new Set([...(d.hours[i - 1] ? d.hours[i - 1].guards : []), ...(S.kitchenMayGuard(t0, S.V) ? [] : [d.kitchen])]);
+      const A = d.shifts.find(x => T(x.start) <= t0 && T(x.end) > t0).members;
+      const eligible = present.filter(s => !A.includes(s.id) && !blocked.has(s.id));
+      if (eligible.length >= hs.guards) return `avoidable: ${k} ${p} (eligible ${eligible.length})`;
       continue;
     }
     if (/משמרת|לוחמים$/.test(p)) { // generic size shortfall in a shift
@@ -94,8 +92,7 @@ test("no absences: every rule holds on every day (post and patrol)", () => {
       for (const h of d.hours) {
         const night = hourOf(T(h.start)) >= 23 || hourOf(T(h.start)) < 7;
         assert.equal(h.guards.length, night ? 2 : 1, `${k} ${h.start} guards`);
-        assert.equal(h.carmelB.length, night ? 4 : 5, `${k} ${h.start} inner`);
-        assert.ok(h.carmelB.some(id => role(id, "commander")), `${k} ${h.start} inner commander`);
+        assert.equal(h.carmelB.length, 0, "no inner post anymore");
       }
       for (const sh of d.shifts) { assert.ok(sh.members.some(id => role(id, "carmelALead"))); assert.ok(sh.members.some(id => role(id, "tigrisDriver"))); }
     } else {
@@ -122,8 +119,7 @@ test("kitchen duty: never outer post / patrol; may guard only 20:00-08:00; nobod
         const t = T(h.start), hh = hourOf(t);
         if (h.guards.includes(d.kitchen)) assert.ok(hh >= 20 || hh < 8, `${k} ${h.start} kitchen guarding outside 20-08`);
         const A = d.shifts.find(x => T(x.start) <= t && T(x.end) > t).members;
-        assert.ok(h.guards.every(g => !A.includes(g) && !h.carmelB.includes(g)));
-        assert.ok(h.carmelB.every(id => !A.includes(id)));
+        assert.ok(h.guards.every(g => !A.includes(g)));
       }
     }
   }
@@ -250,17 +246,17 @@ test("replacing the Tigris driver with a non-driver keeps a Tigris driver in the
   assert.equal(total(S.validate(input, after)), 0);
 });
 
-test("move from the inner post to the rear position (day hour): guard locked, inner still 5 with a commander", () => {
+test("assign a free (no-mission) fighter to the rear position: locked, previous guard freed, no two hours in a row", () => {
   const { input, docs } = setup("2026-11-20T09:00");
-  const k = "2026-11-21", d = docs[k], hi = 4, h = d.hours[hi];
-  const X = h.carmelB.find(id => !role(id, "commander") && id !== d.kitchen);
-  const edited = S.moveInDay(k, d, `b|${hi}`, `g|${hi}`, X, input.now);
+  const k = "2026-11-21", d = docs[k], hi = 4;
+  const X = S.freeAt(input, k, d, hi).find(id => !d.hours[hi - 1].guards.includes(id) && !d.hours[hi + 1].guards.includes(id));
+  const oldGuard = d.hours[hi].guards[0];
+  const edited = S.assignInDay(k, d, `g|${hi}`, X, oldGuard, input.now);
   const after = S.buildAll(input, { ...docs, [k]: edited }, "repair", { rebuildAfter: k }).docs;
   const nh = after[k].hours[hi];
   same(nh.guards, [X]); assert.ok(nh.gLocked.includes(X));
-  assert.ok(!nh.carmelB.includes(X)); assert.equal(nh.carmelB.length, 5);
-  assert.ok(nh.carmelB.some(id => role(id, "commander")));
-  assert.equal(total(S.validate(input, after)), 0);
+  assert.ok(S.freeAt(input, k, after[k], hi).includes(oldGuard), "previous guard is free now");
+  assert.equal(total(S.validate(input, after)), 0, JSON.stringify(S.validate(input, after)[k]));
 });
 
 test("kitchen duty moved to a night guard hour stays kitchen; to a day guard hour it loses kitchen", () => {
@@ -321,23 +317,50 @@ test("60 random edits (replace / move) keep the roster free of double bookings a
   assert.equal(JSON.stringify(S.buildAll(input, docs, "repair").docs), JSON.stringify(docs), "stable after edits");
 });
 
-test("a day that starts late (startAt 15:00) with manual openers: openers kept, everything filled from 15:00 only", () => {
+test("start from the commander's list (today from 15:00): openers locked, then the system continues", () => {
   const k = "2026-11-19";
+  const guards = { "15:00": "מתניה", "16:00": "עירן", "17:00": "אביאל", "18:00": "מארק", "19:00": "תום", "20:00": "מתניה", "21:00": "שאער" };
+  const outer = ["אברג׳יל", "יואב", "ממן", "עירוני", "צבי", "רוזמן", "מאור", "סשה"].map(idOf);
   const seed = { v: 2, type: "post", startAt: `${k}T15:00`, kitchen: idOf("הררי"), kitchenLocked: true,
-    shifts: [{ kind: "carmelA", start: `${k}T15:00`, end: `${k}T19:00`, members: [idOf("אברג׳יל"), idOf("יואב")], locked: [idOf("אברג׳יל"), idOf("יואב")] },
+    shifts: [{ kind: "carmelA", start: `${k}T15:00`, end: `${k}T19:00`, members: outer, locked: outer },
              { kind: "carmelA", start: `${k}T19:00`, end: `2026-11-20T07:00`, members: [], locked: [] }],
-    hours: Array.from({ length: 16 }, (_, i) => { const t = T(`${k}T15:00`) + i * H; return { start: S.fmt(t), guards: i ? [] : [idOf("מתניה")], gLocked: i ? [] : [idOf("מתניה")], carmelB: i ? [] : [idOf("הררי")], bLocked: i ? [] : [idOf("הררי")] }; }) };
-  const input = { soldiers, absences: [], days, dayTypes: allPost, now: T(`${k}T14:57`) };
-  const { docs } = S.buildAll(input, { [k]: seed }, "repair");
+    hours: Array.from({ length: 16 }, (_, i) => { const st = S.fmt(T(`${k}T15:00`) + i * H), g = guards[st.slice(11)]; return { start: st, guards: g ? [idOf(g)] : [], gLocked: g ? [idOf(g)] : [], carmelB: [], bLocked: [] }; }) };
+  const absences = ["גילמור", "גייבל"].map(n => ({ soldierId: idOf(n), start: `${k}T00:00`, end: `2026-11-20T00:00` }));
+  const input = { soldiers, absences, days, dayTypes: allPost, now: T(`${k}T15:53`) };
+  const { docs } = S.buildAll(input, { [k]: seed }, "repair", { rebuildAfter: k });
   const d = docs[k];
-  assert.equal(d.startAt, `${k}T15:00`);
   assert.equal(d.kitchen, idOf("הררי"));
-  assert.equal(d.shifts[0].start.slice(11), "15:00"); assert.equal(d.shifts[0].members.length, 8);
-  assert.ok(d.shifts[0].members.includes(idOf("אברג׳יל")) && d.shifts[0].members.includes(idOf("יואב")));
-  assert.equal(d.hours.length, 16); assert.equal(d.hours[0].start.slice(11), "15:00");
-  same(d.hours[0].guards, [idOf("מתניה")]);
-  assert.ok(d.hours[0].carmelB.includes(idOf("הררי"))); assert.equal(d.hours[0].carmelB.length, 5);
-  assert.equal(total(S.validate(input, docs)), 0, JSON.stringify(S.validate(input, docs)[k]));
-  assert.equal(JSON.stringify(S.buildAll(input, docs, "repair").docs), JSON.stringify(docs), "stable");
-  assert.equal(S.assignmentsOf(docs, idOf("הררי")).find(a => a.what === "תורן מטבח").start.slice(11), "15:00");
+  same(d.shifts[0].members, outer);
+  for (const [hh, n] of Object.entries(guards)) same(d.hours.find(h => h.start.endsWith(hh)).guards, [idOf(n)], hh);
+  for (const h of d.hours.filter(h => h.start >= `${k}T23:00`)) assert.equal(h.guards.length, 2, h.start);
+  // the photo's "no mission" at 16:00: Harari is kitchen (a mission), Gilmor/Geibel absent
+  const free16 = S.freeAt(input, k, d, 1).map(id => soldiers.find(s => s.id === id).name);
+  for (const n of ["גילמור", "גייבל", "הררי", "עירן"]) assert.ok(!free16.includes(n), n);
+  assert.equal(total(S.validate(input, docs)), 0, JSON.stringify(S.validate(input, docs)));
 });
+
+test("rear position: never two hours in a row, spaced out, and not straight after kitchen duty", () => {
+  const input = { soldiers, absences: [], days, dayTypes: allPost, now: 0 };
+  const { docs } = S.buildAll(input, {}, "rebuild");
+  const gaps = [];
+  const last = {};
+  for (const k of days) for (const [i, h] of docs[k].hours.entries()) {
+    const t = T(h.start);
+    for (const g of h.guards) {
+      if (i) assert.ok(!docs[k].hours[i - 1].guards.includes(g), `${k} ${h.start} two in a row`);
+      if (last[g] !== undefined) gaps.push((t - last[g]) / H);
+      last[g] = t;
+    }
+  }
+  const avg = gaps.reduce((a, b) => a + b, 0) / gaps.length;
+  const sorted = [...gaps].sort((a, b) => a - b), median = sorted[Math.floor(sorted.length / 2)];
+  assert.ok(avg >= 4 && median >= 4, `avg gap ${avg.toFixed(1)}h median ${median}h`);
+  // kitchen of day k must not guard / go to the outer post in the first 2 hours after 07:00 next day
+  for (const k of days.slice(0, -1)) {
+    const kid = docs[k].kitchen, next = docs[S.plusDays(k, 1)];
+    if (!next || !next.hours.length) continue;
+    assert.ok(!next.hours.slice(0, 2).some(h => h.guards.includes(kid)), `${k} kitchen guards right after`);
+    assert.ok(!next.shifts[0].members.includes(kid), `${k} kitchen straight into the outer post`);
+  }
+});
+

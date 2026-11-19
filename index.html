@@ -170,6 +170,7 @@ button.mchip { cursor: pointer; }
 .mchip i, .pick i { font-style: normal; font-size: .68rem; font-weight: 700; color: var(--accent); background: var(--surface-2); border-radius: 4px; padding: 0 3px; }
 .mchip.locked { border-color: var(--khaki); }
 .mchip.bad { border-color: var(--bad); background: var(--bad-bg); color: var(--bad); }
+.mchip.free { background: transparent; color: var(--muted); border-style: dotted; font-weight: 500; }
 .mchip.empty-slot { border-style: dashed; color: var(--bad); background: transparent; }
 .chips { display: flex; flex-wrap: wrap; gap: 5px; min-width: 0; }
 .srow2 { display: grid; gap: 6px; padding: 8px 0; border-bottom: 1px solid var(--line); }
@@ -732,7 +733,7 @@ const SCHED = (() => {
   const hourOf = t => new Date(t).getHours();
   const isNight = t => { const h = hourOf(t); return h >= 23 || h < 7; };
   // per-hour sizes. v1 (old) days: 1 guard, 4 in carmel B.
-  function hourSpec(t, v) { if (v !== V) return { guards: 1, inner: 4 }; return isNight(t) ? { guards: 2, inner: 4 } : { guards: 1, inner: 5 }; }
+  function hourSpec(t, v) { if (v !== V) return { guards: 1, inner: 0 }; return { guards: isNight(t) ? 2 : 1, inner: 0 }; }
   // kitchen duty may stand rear position between 20:00 and 08:00 (v2 only)
   function kitchenMayGuard(t, v) { if (v !== V) return false; const h = hourOf(t); return h >= 20 || h < 8; }
 
@@ -832,7 +833,7 @@ const SCHED = (() => {
   // book an existing (kept as-is) day into the fairness stats
   function bookDay(c, key, d) {
     const [d0, d1] = dayWindow(key, d.v);
-    if (d.kitchen && c.stats[d.kitchen]) { c.stats[d.kitchen].kitchen += 1; c.stats[d.kitchen].load += 4; }
+    if (d.kitchen && c.stats[d.kitchen]) { c.stats[d.kitchen].kitchen += 1; c.stats[d.kitchen].load += 4; c.stats[d.kitchen].kitchenEnd = dayWindow(key, d.v)[1]; }
     for (const sh of d.shifts) for (const id of sh.members) book(c, id, T(sh.start), T(sh.end), sh.kind === "carmelA" ? "A" : "patrol");
     for (const h of d.hours) { const t = T(h.start), te = Math.min(t + HOUR, d1); h.guards.forEach(id => book(c, id, t, te, "guard")); h.carmelB.forEach(id => bookInner(c, id, t, te)); }
     return d0;
@@ -879,14 +880,13 @@ const SCHED = (() => {
             const others = c.ids.filter(o => o !== id && has(c, o, q.r) && free(c, o, T(s), T(e))).length;
             p += others < q.n ? 10000 : others < q.n * 2 ? 300 : 0;
           }
-          if (has(c, id, ROLE.commander)) p += 40;
           return p;
         };
         const sc = id => need(id) + (laterToday.has(id) ? 500 : 0) + c.stats[id].kitchen * 100 + c.stats[id].load + scarcity(c, id) + tb(id, key + "k");
         doc.kitchen = cands.sort((a, b) => sc(a) - sc(b))[0] || null;
       }
     }
-    if (doc.kitchen && c.stats[doc.kitchen]) { c.stats[doc.kitchen].kitchen += 1; c.stats[doc.kitchen].load += 4; }
+    if (doc.kitchen && c.stats[doc.kitchen]) { c.stats[doc.kitchen].kitchen += 1; c.stats[doc.kitchen].load += 4; c.stats[doc.kitchen].kitchenEnd = d1; }
 
     // outer post (carmel A) shifts / patrols
     template(key, type, d0).forEach(([kind, s, e], i) => {
@@ -897,15 +897,12 @@ const SCHED = (() => {
         const st = c.stats[id];
         let v = st.load + (kind === "carmelA" ? st.A : st.patrol) * 0.5 + tb(id, s);
         if (st.lastEnd && t0 - st.lastEnd < 6 * HOUR) v += 200; // avoid back-to-back
+        if (st.kitchenEnd && t0 >= st.kitchenEnd && t0 - st.kitchenEnd < 8 * HOUR) v += 300; // just came off kitchen
         return v;
       };
       // a further holder of a required role is only taken if others remain for the next shift / the inner post
       const block = (id, mem) => {
         for (const q of spec.reqs) if (has(c, id, q.r) && mem.filter(m => has(c, m, q.r)).length >= q.n) return true;
-        if (kind === "carmelA" && has(c, id, ROLE.commander)) {
-          const left = c.ids.filter(o => o !== id && !mem.includes(o) && has(c, o, ROLE.commander) && free(c, o, t0, t1)).length;
-          if (left < 2) return true; // keep at least two commanders for the inner post
-        }
         return false;
       };
       let members;
@@ -927,47 +924,44 @@ const SCHED = (() => {
       doc.shifts.push({ kind, start: s, end: e, members, locked: locked.filter(id => members.includes(id)) });
     });
 
-    // post day: hourly rear position (1 by day, 2 at night) + inner post (5 by day, 4 at night, with a commander)
+    // post day: hourly rear position (1 by day, 2 at night). Never two hours in a row; as much spacing as possible.
     if (type === "post") {
-      let prevB = [];
       let i = 0;
       for (let t = d0; t < d1; t += HOUR, i++) {
         const te = Math.min(t + HOUR, d1), s = fmt(t), hs = hourSpec(t, V);
-        const ph = same ? prev.hours[i] : null;
+        const ph = same ? prev.hours[i] : null, pn = same ? prev.hours[i + 1] : null;
         const sh = doc.shifts.find(x => T(x.start) <= t && T(x.end) > t);
         const A = sh ? sh.members : [];
         const kOk = kitchenMayGuard(t, V);
-        let G = [], B = [];
+        const prevG = i ? doc.hours[i - 1].guards : [];
+        let G = [];
         const running = ph && frozen(t);
-        const clean = ph && ph.guards.length === hs.guards && ph.carmelB.length === hs.inner
-          && !ph.guards.some(x => A.includes(x) || (x === doc.kitchen && !kOk) || ph.carmelB.includes(x)) && !ph.carmelB.some(x => A.includes(x));
-        if (running && (te <= c.now || clean)) { G = [...ph.guards]; B = [...ph.carmelB]; }
+        const clean = ph && ph.guards.length === hs.guards && !ph.guards.some(x => A.includes(x) || (x === doc.kitchen && !kOk));
+        if (running && (te <= c.now || clean)) G = [...ph.guards];
         else {
           const keepIt = (repair || running) && ph;
           const w0 = running ? Math.max(t, c.now) : t;
-          const base = c.ids.filter(id => !A.includes(id) && free(c, id, w0, te) && !busyAt(c, id, w0, te));
-          const gc = base.filter(id => (id !== doc.kitchen || kOk) && !(ph && ph.bLocked.includes(id)));
-          const cmdAvail = base.filter(id => has(c, id, ROLE.commander)).length;
+          const nextLocked = new Set(pn ? pn.gLocked : []);
+          // hard rule: nobody guards two hours in a row (previous hour, or locked for the next hour)
+          const gc = c.ids.filter(id => !A.includes(id) && free(c, id, w0, te) && !busyAt(c, id, w0, te)
+            && (id !== doc.kitchen || kOk) && !(prevG.includes(id) && !(ph && ph.gLocked.includes(id))) && !(nextLocked.has(id) && !(ph && ph.gLocked.includes(id))));
           const gScore = id => {
             const st = c.stats[id];
-            let v = st.guard * 10 + st.load * 0.6 + tb(id, s + "g");
-            if (st.lastEnd && t - st.lastEnd < 2 * HOUR && !(st.lastGuard && st.lastGuard === st.lastEnd)) v += 150; // just finished a long shift
-            if (st.lastGuard && t - st.lastGuard < 3 * HOUR) v += 500;
-            if (prevB.includes(id)) v += 30;
-            if (has(c, id, ROLE.commander) && cmdAvail <= 1) v += 1000;
+            const since = st.lastEnd ? (t - st.lastEnd) / HOUR : 48;          // rest since last mission
+            const sinceG = st.lastGuard ? (t - st.lastGuard) / HOUR : 48;     // since last guard
+            const nextBusy = st.busy.filter(([a]) => a >= te).reduce((m, [a]) => Math.min(m, a), Infinity);
+            const untilNext = nextBusy === Infinity ? 48 : (nextBusy - te) / HOUR;   // until next known mission
+            let v = st.guard * 6 + st.load * 0.4 + tb(id, s + "g");
+            v -= Math.min(sinceG, 24) * 25 + Math.min(since, 12) * 10 + Math.min(untilNext, 8) * 15; // spacing
+            if (sinceG < 3) v += 400;
+            v += doc.hours.reduce((n, h) => n + (h.guards.includes(id) ? 1 : 0), 0) * 70; // spread guards within the day
+            if (st.kitchenEnd && t >= st.kitchenEnd && t - st.kitchenEnd < 8 * HOUR) v += (8 - (t - st.kitchenEnd) / HOUR) * 120; // just came off kitchen
             return v;
           };
-          // never take the last available commander to the rear position (the inner post needs one)
-          const gBlock = (id, mem) => has(c, id, ROLE.commander) && base.filter(o => o !== id && !mem.includes(o) && has(c, o, ROLE.commander)).length < 1;
-          G = pickGroup(c, hs.guards, gc, null, gScore, ph ? ph.gLocked : [], keepIt ? ph.guards : [], gBlock);
-          const bc = base.filter(id => !G.includes(id));
-          const bScore = id => (prevB.includes(id) ? -1000 : 0) + (id === doc.kitchen ? -50 : 0) + c.stats[id].B + c.stats[id].load * 0.2 + tb(id, s + "b");
-          B = pickGroup(c, hs.inner, bc, SPEC.carmelB, bScore, ph ? ph.bLocked : [], keepIt ? ph.carmelB : [], null);
+          G = pickGroup(c, hs.guards, gc, null, gScore, ph ? ph.gLocked : [], keepIt ? ph.guards : [], null);
         }
         G.forEach(id => book(c, id, t, te, "guard"));
-        B.forEach(id => bookInner(c, id, t, te));
-        doc.hours.push({ start: s, guards: G, gLocked: (ph ? ph.gLocked : []).filter(id => G.includes(id)), carmelB: B, bLocked: (ph ? ph.bLocked : []).filter(id => B.includes(id)) });
-        prevB = B;
+        doc.hours.push({ start: s, guards: G, gLocked: (ph ? ph.gLocked : []).filter(id => G.includes(id)), carmelB: [], bLocked: [] });
       }
     }
     return doc;
@@ -1004,7 +998,6 @@ const SCHED = (() => {
     d.hours.forEach((h, i) => {
       const t0 = T(h.start), t1 = Math.min(t0 + HOUR, d1), hh = h.start.slice(11);
       out.push({ ref: `g|${i}`, kind: "guard", t0, t1, label: `עמדה ${hh}`, size: hourSpec(t0, d.v).guards });
-      out.push({ ref: `b|${i}`, kind: "carmelB", t0, t1, label: `כרמל פנים ${hh}`, size: hourSpec(t0, d.v).inner });
     });
     return out;
   }
@@ -1119,16 +1112,9 @@ const SCHED = (() => {
           if (g === d.kitchen && !kitchenMayGuard(t0, d.v)) list.push(`${lab}: תורן המטבח שומר (מותר רק 20:00–08:00)`);
           chk(g, t0, t1, `${lab} עמדה`); busy(g, t0, t1, `${lab} עמדה`, key);
         }
-        const B = h.carmelB;
-        if (B.length < hs.inner) list.push(`${lab}: בכרמל פנים חסרים ${hs.inner - B.length}`);
-        if (B.length > hs.inner) list.push(`${lab}: בכרמל פנים ${B.length - hs.inner} מעבר לתקן`);
-        if (!B.some(id => has(c, id, ROLE.commander))) list.push(`${lab}: אין מפקד בכרמל פנים`);
-        if (new Set(B).size !== B.length || new Set(h.guards).size !== h.guards.length) list.push(`${lab}: לוחם כפול`);
-        for (const id of B) {
-          if (A.includes(id)) list.push(`${lab}: ${nm(id)} גם בכרמל חוץ וגם בכרמל פנים`);
-          if (h.guards.includes(id)) list.push(`${lab}: ${nm(id)} גם בעמדה וגם בכרמל פנים`);
-          chk(id, t0, t1, `${lab} כרמל פנים`);
-        }
+        if (new Set(h.guards).size !== h.guards.length) list.push(`${lab}: לוחם כפול`);
+        const hp = d.hours[d.hours.indexOf(h) - 1];
+        if (d.v === V && hp) for (const g of h.guards) if (hp.guards.includes(g)) list.push(`${lab}: ${nm(g)} שומר שעתיים ברצף`);
       }
     }
     // double booking across missions (outer post / patrol / guard)
@@ -1138,6 +1124,16 @@ const SCHED = (() => {
     }
     for (const k of Object.keys(out)) out[k] = [...new Set(out[k])];
     return out;
+  }
+
+  // Who is present and has no mission in hour i of a post day (not outer post, not rear position, not kitchen duty).
+  function freeAt(input, key, day, i) {
+    const d = normalize(day); if (!d || !d.hours[i]) return [];
+    const t0 = T(d.hours[i].start), t1 = t0 + HOUR;
+    const sh = d.shifts.find(x => T(x.start) <= t0 && T(x.end) > t0);
+    const busy = new Set([...(sh ? sh.members : []), ...d.hours[i].guards, d.kitchen]);
+    const absent = id => (input.absences || []).some(a => a.soldierId === id && T(a.start) < t1 && T(a.end) > t0);
+    return (input.soldiers || []).filter(s => s.active !== false && !busy.has(s.id) && !absent(s.id)).map(s => s.id);
   }
 
   // All assignments of one soldier, for "my missions" / diffs.
@@ -1162,7 +1158,7 @@ const SCHED = (() => {
     return out.sort((a, b) => a.start.localeCompare(b.start));
   }
 
-  return { buildAll, validate, assignmentsOf, slotsOf, holders, assignInDay, replaceInDay, moveInDay, diffDay, normalize, hourSpec, kitchenMayGuard, dayWindow, dayStart, template, ROLE, ROLE_LABEL, SIZE, SPEC, KIND_LABEL, HOUR, V, T, fmt, plusDays };
+  return { buildAll, validate, assignmentsOf, freeAt, slotsOf, holders, assignInDay, replaceInDay, moveInDay, diffDay, normalize, hourSpec, kitchenMayGuard, dayWindow, dayStart, template, ROLE, ROLE_LABEL, SIZE, SPEC, KIND_LABEL, HOUR, V, T, fmt, plusDays };
 })();
 /* ==== SCHEDULER ENGINE END ==== */
 
@@ -1241,14 +1237,15 @@ function dayBody(key, problems) {
     out += `<div class="srow2"><span class="lbl">${label} <span class="muted">(${(sh.members || []).length}/${size})</span></span><div class="chips">${chips}${Array.from({ length: missing }, () => emptyChip(`s|${i}|+`)).join("")}</div></div>`;
   });
   if (type === "post" && (d.hours || []).length) {
-    out += `<div class="lbl" style="margin-top:6px">עמדה אחורית וכרמל פנים מוצב (לפי שעה)</div><div class="htable" role="table">
-      <div class="hrow hhead" role="row"><span>שעה</span><span>עמדה</span><span>כרמל פנים</span></div>`;
+    out += `<div class="lbl" style="margin-top:6px">עמדה אחורית ומי ללא משימה (לפי שעה)</div><div class="htable" role="table">
+      <div class="hrow hhead" role="row"><span>שעה</span><span>עמדה</span><span>ללא משימה</span></div>`;
+    const inp = schedInput();
     d.hours.forEach((h, i) => {
-      const B = (h.carmelB || []).map(id => nameChip(id, `b|${i}|${id}`, (h.bLocked || []).includes(id), bad)).join("");
       const hs = SCHED.hourSpec(ms(h.start), d.v);
-      const miss = Math.max(0, hs.inner - (h.carmelB || []).length);
       const G = (h.guards || []).map(id => nameChip(id, `g|${i}|${id}`, (h.gLocked || []).includes(id), bad)).join("") + Array.from({ length: Math.max(0, hs.guards - (h.guards || []).length) }, () => emptyChip(`g|${i}|+`)).join("");
-      out += `<div class="hrow" role="row"><span class="num">${h.start.slice(11)}</span><span class="chips">${G}</span><span class="chips">${B}${Array.from({ length: miss }, () => emptyChip(`b|${i}|+`)).join("")}</span></div>`;
+      // viewers can't read absences, so for them "no mission" = everyone active who isn't on a mission
+      const F = !S.isOwner ? "" : SCHED.freeAt(inp, key, d, i).map(id => `<span class="mchip free">${esc(nameOf(id))}</span>`).join("");
+      out += `<div class="hrow" role="row"><span class="num">${h.start.slice(11)}</span><span class="chips">${G}</span><span class="chips">${F || `<span class="muted">—</span>`}</span></div>`;
     });
     out += `</div>`;
   }
@@ -1284,9 +1281,9 @@ function viewFairness() {
   const { stats } = SCHED.buildAll(schedInput(), S.schedule, "repair");
   const rows = activeSoldiers().map(s => ({ s, st: stats[s.id] })).filter(x => x.st)
     .sort((a, b) => b.st.load - a.st.load)
-    .map(({ s, st }) => `<tr><td>${esc(s.name)}</td><td class="num">${Math.round(st.A)}</td><td class="num">${Math.round(st.B)}</td><td class="num">${Math.round(st.guard)}</td><td class="num">${Math.round(st.patrol)}</td><td class="num">${st.kitchen}</td></tr>`).join("");
+    .map(({ s, st }) => `<tr><td>${esc(s.name)}</td><td class="num">${Math.round(st.A)}</td><td class="num">${Math.round(st.guard)}</td><td class="num">${Math.round(st.patrol)}</td><td class="num">${st.kitchen}</td></tr>`).join("");
   return `<div class="panel"><h2>חלוקת שעות לפי לוחם</h2><div class="muted" style="font-size:.85rem">שעות בכל משימה לאורך כל הסבב (כולל ימים שעברו). המערכת משבצת כך שהעומס יתחלק כמה שיותר שווה.</div>
-    <div style="overflow-x:auto"><table class="ftable"><thead><tr><th>לוחם</th><th>כרמל חוץ</th><th>כרמל פנים</th><th>עמדה</th><th>סיור</th><th>מטבח (ימים)</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+    <div style="overflow-x:auto"><table class="ftable"><thead><tr><th>לוחם</th><th>כרמל חוץ</th><th>עמדה</th><th>סיור</th><th>מטבח (ימים)</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
 }
 function viewSchedDay() {
   const days = reserveDays(), k = S.schedDay;
@@ -1364,7 +1361,7 @@ function drawSwap() {
     const now = Date.now(), cur = engineRef(S.swap.ref);
     const opts = SCHED.slotsOf(k, d).filter(sl => sl.t1 > now && sl.ref !== cur && !SCHED.holders(d, sl.ref).includes(X) && !absentDuring(X, Math.max(sl.t0, now), sl.t1));
     const grp = (kinds, title) => { const o = opts.filter(sl => kinds.includes(sl.kind)); return o.length ? `<optgroup label="${title}">${o.map(sl => `<option value="${sl.ref}">${rng(sl.label)}${sl.kind === "kitchen" && d.kitchen ? ` (במקום ${esc(nameOf(d.kitchen))})` : ""}</option>`).join("")}</optgroup>` : ""; };
-    body = opts.length ? `<div class="field"><label for="moveTo">להעביר את ${esc(nameOf(X))} אל</label><select id="moveTo" class="inp">${grp(["kitchen"], "מטבח")}${grp(["carmelA", "patrol"], "משמרות")}${grp(["guard"], "עמדה אחורית")}${grp(["carmelB"], "כרמל פנים מוצב")}</select></div>
+    body = opts.length ? `<div class="field"><label for="moveTo">להעביר את ${esc(nameOf(X))} אל</label><select id="moveTo" class="inp">${grp(["kitchen"], "מטבח")}${grp(["carmelA", "patrol"], "משמרות")}${grp(["guard"], "עמדה אחורית")}</select></div>
       <div class="muted" style="font-size:.85rem">${esc(nameOf(X))} ייצא מ${esc(lbl)} ויינעל במשימה החדשה. המקום שהתפנה ימולא אוטומטית.</div>
       <div class="actions"><button class="btn primary" data-act="movego">המשך לתצוגה מקדימה</button></div>` : `<div class="empty">אין משימה פנויה להעברה.</div>`;
   } else {

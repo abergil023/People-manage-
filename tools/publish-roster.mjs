@@ -9,6 +9,7 @@
 //   <dir>/soldiers/<id>.json           fighters (only the name is published)
 //   <dir>/settings/main.json           reserve ranges (only listed days are published)
 //   <dir>/secret/publicLink.json       { key }  (base64url, 32 bytes; never written to the output)
+//   <dir>/absences/<id>.json           leaves - used ONLY to know who is present; nothing from them is published
 //
 // The output contains ONLY names and assignments: no absences, reasons, roles or notes.
 // It is encrypted with AES-256-GCM; the key lives only in the link fragment (#k=...).
@@ -20,12 +21,13 @@ import { webcrypto as crypto } from "node:crypto";
 const args = Object.fromEntries(process.argv.slice(2).reduce((a, v, i, all) => (v.startsWith("--") ? [...a, [v.slice(2), all[i + 1]]] : a), []));
 if (!args.db || !args.out) { console.error("usage: --db <dir> --out <file>"); process.exit(2); }
 
-const readDir = sub => { const d = join(args.db, sub); return existsSync(d) ? Object.fromEntries(readdirSync(d).filter(f => f.endsWith(".json")).map(f => [f.slice(0, -5), JSON.parse(readFileSync(join(d, f), "utf8"))])) : {}; };
+const readDir = sub => { const d = join(args.db, sub); return existsSync(d) ? Object.fromEntries(readdirSync(d).filter(f => f.endsWith(".json") && !f.startsWith(".")).map(f => [f.slice(0, -5), JSON.parse(readFileSync(join(d, f), "utf8"))])) : {}; };
 const unwrap = x => (x && typeof x === "object" && x.data && typeof x.data === "object" && !x.type && !x.name ? x.data : x);
 const schedule = Object.fromEntries(Object.entries(readDir("schedule")).map(([k, v]) => [k, unwrap(v)]));
 const soldiers = Object.fromEntries(Object.entries(readDir("soldiers")).map(([k, v]) => [k, unwrap(v)]));
 const settingsMain = unwrap(readDir("settings").main || {});
 const secret = unwrap(readDir("secret").publicLink || {});
+const absences = Object.values(readDir("absences")).map(unwrap).filter(a => a && a.soldierId && a.start && a.end);
 if (!secret.key) { console.error("no secret/publicLink key - create the link in the app first"); process.exit(3); }
 
 const P2 = n => String(n).padStart(2, "0");
@@ -35,6 +37,16 @@ const reserve = new Set();
 for (const r of settingsMain.reserveRanges || []) if (r.from && r.to) for (let k = r.from; k <= r.to; k = plusDays(k, 1)) reserve.add(k);
 
 const name = id => (soldiers[id] && typeof soldiers[id].name === "string" ? soldiers[id].name : "—");
+const T = s => { const [d, t = "00:00"] = s.split("T"); const [y, m, dd] = d.split("-").map(Number); const [h, mi] = t.split(":").map(Number); return new Date(y, m - 1, dd, h, mi).getTime(); };
+const present = (id, t0, t1) => !absences.some(a => a.soldierId === id && T(a.start) < t1 && T(a.end) > t0);
+const active = Object.entries(soldiers).filter(([, s]) => s && s.active !== false).sort((a, b) => (a[1].order ?? 0) - (b[1].order ?? 0)).map(([id]) => id);
+// who is present and has no mission in this hour (not outer post, not rear position, not kitchen duty)
+function freeAt(d, h) {
+  const t0 = T(h.start), t1 = t0 + 3600000;
+  const sh = (d.shifts || []).find(x => T(x.start) <= t0 && T(x.end) > t0);
+  const busy = new Set([...((sh && sh.members) || []), ...(Array.isArray(h.guards) ? h.guards : h.guard ? [h.guard] : []), d.kitchen]);
+  return active.filter(id => !busy.has(id) && present(id, t0, t1)).map(name);
+}
 const LABEL = { carmelA: "כרמל חוץ מוצב", patrol: "סיור" };
 const days = Object.keys(schedule).filter(k => /^\d{4}-\d{2}-\d{2}$/.test(k) && (!reserve.size || reserve.has(k))).sort().map(key => {
   const d = schedule[key] || {};
@@ -43,7 +55,7 @@ const days = Object.keys(schedule).filter(k => /^\d{4}-\d{2}-\d{2}$/.test(k) && 
     key, type: ["post", "patrol"].includes(d.type) ? d.type : "none", start,
     kitchen: d.kitchen ? name(d.kitchen) : null,
     shifts: (d.shifts || []).map(sh => ({ what: LABEL[sh.kind] || "", start: String(sh.start || ""), end: String(sh.end || ""), names: (sh.members || []).map(name) })),
-    hours: (d.hours || []).map(h => ({ start: String(h.start || ""), guards: (Array.isArray(h.guards) ? h.guards : h.guard ? [h.guard] : []).map(name), inner: (h.carmelB || []).map(name) })),
+    hours: (d.hours || []).map(h => ({ start: String(h.start || ""), guards: (Array.isArray(h.guards) ? h.guards : h.guard ? [h.guard] : []).map(name), free: freeAt(d, h) })),
   };
 });
 const team = Object.values(soldiers).filter(s => s && s.active !== false).sort((a, b) => (a.order ?? 0) - (b.order ?? 0)).map(s => s.name);

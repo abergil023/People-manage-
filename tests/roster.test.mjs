@@ -66,6 +66,12 @@ test("publish: encrypted output, names + assignments only, nothing about absence
   assert.equal(data.days[0].shifts[0].names.length, 8);
   assert.ok(data.days[0].hours.some(h => h.guards.length === 2), "night hours have 2 guards");
   assert.ok(data.team.includes("סשה"));
+  // "no mission" per hour: present people only (Tom is on leave on 21.11), nobody who has a mission
+  const d21 = data.days[1], h = d21.hours[3];
+  assert.ok(Array.isArray(h.free) && !("inner" in h));
+  assert.ok(!h.free.includes("תום"), "absent soldier not listed as free");
+  const sh = d21.shifts.find(x => x.start <= h.start && x.end > h.start);
+  for (const n of h.free) assert.ok(!h.guards.includes(n) && !sh.names.includes(n) && n !== d21.kitchen, n);
 });
 
 test("publish again without changes -> unchanged; after a change -> changed", () => {

@@ -38,14 +38,14 @@ async function load() {
   document.getElementById("upd").textContent = `צפייה בלבד · עודכן ${short(DATA.updatedAt.slice(0, 10))} ${P2(u.getHours())}:${P2(u.getMinutes())}`;
   render();
 }
-const chip = n => `<span class="chip${ME && n === ME ? " me" : ""}">${esc(n)}</span>`;
+const chip = (n, free) => `<span class="chip${free ? " free" : ""}${ME && n === ME ? " me" : ""}">${esc(n)}</span>`;
 function dayBody(d) {
   if (d.type === "none") return `<div class="muted">אין משימות ביום הזה.</div>`;
   let out = `<div class="row2"><span class="lbl">תורן מטבח</span><div class="chips">${d.kitchen ? chip(d.kitchen) : "—"}</div></div>`;
   for (const sh of d.shifts) out += `<div class="row2"><span class="lbl">${esc(sh.what)} ${ltr(`${sh.start.slice(11)}–${sh.end.slice(11)}`)}</span><div class="chips">${sh.names.map(chip).join("")}</div></div>`;
   if (d.hours.length) {
-    out += `<div class="lbl">עמדה אחורית וכרמל פנים מוצב (לפי שעה)</div><div class="htable"><div class="hrow head"><span>שעה</span><span>עמדה</span><span>כרמל פנים</span></div>`;
-    for (const h of d.hours) out += `<div class="hrow"><span class="num">${h.start.slice(11)}</span><span class="chips">${h.guards.map(chip).join("")}</span><span class="chips">${h.inner.map(chip).join("")}</span></div>`;
+    out += `<div class="lbl">עמדה אחורית ומי ללא משימה (לפי שעה)</div><div class="htable"><div class="hrow head"><span>שעה</span><span>עמדה</span><span>ללא משימה</span></div>`;
+    for (const h of d.hours) out += `<div class="hrow"><span class="num">${h.start.slice(11)}</span><span class="chips">${h.guards.map(chip).join("")}</span><span class="chips">${(h.free || h.inner || []).map(n => chip(n, true)).join("") || "—"}</span></div>`;
     out += `</div>`;
   }
   return out;
@@ -55,10 +55,10 @@ function mine(name) {
   for (const d of DATA.days) {
     if (d.kitchen === name) out.push({ key: d.key, what: "תורן מטבח", s: d.start, e: d.start });
     for (const sh of d.shifts) if (sh.names.includes(name)) out.push({ key: d.key, what: sh.what, s: sh.start.slice(11), e: sh.end.slice(11), at: sh.start });
-    for (const [f, what] of [["guards", "עמדה אחורית"], ["inner", "כרמל פנים מוצב"]]) {
+    for (const [f, what] of [["guards", "עמדה אחורית"]]) {
       let cur = null;
       for (const h of d.hours) {
-        if (h[f].includes(name)) { const hh = h.start.slice(11), next = P2((+hh.slice(0, 2) + 1) % 24) + hh.slice(2); if (cur && cur.e === hh) cur.e = next; else { cur = { key: d.key, what, s: hh, e: next, at: h.start }; out.push(cur); } }
+        if ((h[f] || []).includes(name)) { const hh = h.start.slice(11), next = P2((+hh.slice(0, 2) + 1) % 24) + hh.slice(2); if (cur && cur.e === hh) cur.e = next; else { cur = { key: d.key, what, s: hh, e: next, at: h.start }; out.push(cur); } }
         else cur = null;
       }
     }

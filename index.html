@@ -64,7 +64,7 @@ main { max-width: 760px; margin: 0 auto; padding-left: max(16px, env(safe-area-i
 /* tabs */
 .tabs { position: fixed; inset: auto 0 0 0; z-index: 6; background: var(--surface); border-top: 1px solid var(--line);
   padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 8px calc(8px + env(safe-area-inset-bottom, 0px)); }
-.tabs-in { max-width: 760px; margin: 0 auto; display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.tabs-in { max-width: 760px; margin: 0 auto; display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }
 .tab { border: 0; background: transparent; padding: 8px 4px; border-radius: 10px; font-weight: 700; color: var(--muted); }
 .tab[aria-current="page"] { background: var(--surface-2); color: var(--ink); }
 
@@ -163,6 +163,38 @@ h2 { font-family: var(--f-display); font-size: 1.05rem; font-weight: 600; margin
 a.btn { text-decoration: none; display: inline-block; text-align: center; }
 .btn.wa { background: var(--ok); border-color: var(--ok); color: var(--surface); }
 .gcal { display: grid; gap: 6px; }
+/* duty roster */
+.mchip { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 8px; padding: 3px 8px; font-size: .86rem; font-weight: 600; line-height: 1.35; }
+button.mchip { cursor: pointer; }
+.mchip .rb { display: inline-flex; gap: 2px; }
+.mchip i, .pick i { font-style: normal; font-size: .68rem; font-weight: 700; color: var(--accent); background: var(--surface-2); border-radius: 4px; padding: 0 3px; }
+.mchip.locked { border-color: var(--khaki); }
+.mchip.bad { border-color: var(--bad); background: var(--bad-bg); color: var(--bad); }
+.mchip.empty-slot { border-style: dashed; color: var(--bad); background: transparent; }
+.chips { display: flex; flex-wrap: wrap; gap: 5px; min-width: 0; }
+.srow2 { display: grid; gap: 6px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.htable { display: grid; gap: 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.hrow { display: grid; grid-template-columns: 3.4rem minmax(0, 7rem) minmax(0, 1fr); gap: 6px; align-items: center; padding: 5px 8px; border-top: 1px solid var(--line); }
+.hrow.hhead { border-top: 0; background: var(--surface-2); font-size: .78rem; font-weight: 700; color: var(--muted); }
+.probs { background: var(--bad-bg); color: var(--ink); border-radius: 10px; padding: 8px 12px; font-size: .88rem; }
+.probs ul { margin: 4px 0 0; padding-inline-start: 18px; }
+.daylist { display: grid; gap: 6px; }
+.dayrow { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; align-items: center; padding: 6px 8px; border-radius: 10px; background: var(--surface-2); }
+.dlink { border: 0; background: transparent; text-align: right; display: grid; gap: 0; padding: 2px; min-width: 0; }
+.seg.small button { padding: 4px 8px; font-size: .8rem; }
+.ftable { width: 100%; border-collapse: collapse; font-size: .88rem; }
+.ftable th, .ftable td { padding: 6px 8px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; }
+.ftable th { color: var(--muted); font-size: .78rem; }
+.picklist .pick { width: 100%; display: flex; justify-content: space-between; gap: 8px; border: 1px solid var(--line); background: var(--surface); border-radius: 10px; padding: 8px 10px; text-align: right; }
+.picklist .pick:disabled { opacity: .5; cursor: not-allowed; }
+.vday summary { cursor: pointer; padding: 2px 0; }
+.roles { display: flex; flex-wrap: wrap; gap: 4px; }
+.roles button { border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 2px 8px; font-size: .75rem; font-weight: 700; color: var(--muted); }
+.roles button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.solrow { display: grid; gap: 6px; padding: 8px; border-radius: 10px; background: var(--surface-2); }
+body.viewer .tabs, body.viewer .fab { display: none; }
+body.viewer main { padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px)); }
+@media (max-width: 420px) { .dayrow { grid-template-columns: minmax(0, 1fr) auto; } .dayrow .chip { grid-column: 1 / -1; justify-self: start; } .hrow { grid-template-columns: 3rem minmax(0, 6rem) minmax(0, 1fr); } }
 </style>
 
 <header class="top"><div class="top-in">
@@ -178,10 +210,12 @@ a.btn { text-decoration: none; display: inline-block; text-align: center; }
   <button class="tab" data-tab="cal">לוח</button>
   <button class="tab" data-tab="soldiers">לוחמים</button>
   <button class="tab" data-tab="report">דוח 1</button>
+  <button class="tab" data-tab="sched">שבצ״ק</button>
   <button class="tab" data-tab="settings">הגדרות</button>
 </div></nav>
 
 <div id="modal"></div>
+<div id="smodal"></div>
 <div id="toast" class="toast" hidden></div>
 
 <script>
@@ -284,12 +318,16 @@ function reportTimes() { return ["10:00", "20:00"]; }
 /* ---------- render ---------- */
 const app = document.getElementById("app");
 function render() {
-  document.querySelectorAll(".tab").forEach(b => b.setAttribute("aria-current", b.dataset.tab === S.tab || (S.tab === "day" && b.dataset.tab === "cal") || (S.tab === "soldier" && b.dataset.tab === "soldiers") ? "page" : "false"));
+  document.body.classList.toggle("viewer", !S.isOwner);
+  document.querySelectorAll(".tab").forEach(b => b.setAttribute("aria-current", b.dataset.tab === S.tab || (S.tab === "day" && b.dataset.tab === "cal") || (S.tab === "soldier" && b.dataset.tab === "soldiers") || (S.tab === "schedday" && b.dataset.tab === "sched") ? "page" : "false"));
   renderNow();
   const notice = S.notice ? `<div class="notice">${esc(S.notice)}</div>` : "";
-  const ready = S.loaded.soldiers && S.loaded.settings && S.loaded.absences;
+  const ready = S.loaded.soldiers && S.loaded.settings && S.loaded.absences && S.loaded.schedule && S.loaded.schedSettings;
   let body;
   if (!ready && !S.notice) body = `<div class="empty">טוען נתונים…</div>`;
+  else if (!S.isOwner) body = S.tab === "schedday" ? viewSchedDay() : viewViewer();
+  else if (S.tab === "sched") body = viewSched();
+  else if (S.tab === "schedday") body = viewSchedDay();
   else if (S.tab === "day") body = viewDay();
   else if (S.tab === "soldiers") body = viewSoldiers();
   else if (S.tab === "soldier") body = viewSoldier();
@@ -301,6 +339,7 @@ function render() {
 function renderNow() {
   const el = document.getElementById("now");
   if (!S.loaded.soldiers) { el.innerHTML = ""; return; }
+  if (!S.isOwner) { el.innerHTML = `<span>צפייה בלבד</span>`; return; }
   const p = presentNow();
   if (p) { el.innerHTML = `<b>${p.n}/${p.total}</b><span>נוכחים עכשיו</span>`; return; }
   const next = cache().days.find(k => k > todayKey());
@@ -448,7 +487,9 @@ function viewSettings() {
     <div class="panel"><div class="row"><h2>ימי מילואים</h2><span class="chip c-present">${reserveDays().length} ימים</span></div>${ranges || `<div class="muted">אין טווחים.</div>`}
       <button class="btn" data-act="addrange">+ טווח תאריכים</button></div>
     <div class="panel"><div class="row"><h2>לוחמים</h2><span class="chip c-present">סד״כ ${act.length}</span></div>
-      <ul class="list">${act.map(s => `<li class="setrow"><input class="inp" id="sn-${esc(s.id)}" value="${esc(s.name)}" data-rename="${esc(s.id)}" aria-label="שם הלוחם"><button class="btn small danger" data-deact="${esc(s.id)}">הסרה</button></li>`).join("")}</ul>
+      <div class="muted" style="font-size:.85rem">תפקידים לשבצ״ק: מפ׳ מפקד · ★ אברג׳יל/אביאל (מוביל כרמל א׳) · ד׳ נהג דוד · ט׳ נהג טיגריס</div>
+      <ul class="list">${act.map(s => `<li class="solrow"><div class="setrow"><input class="inp" id="sn-${esc(s.id)}" value="${esc(s.name)}" data-rename="${esc(s.id)}" aria-label="שם הלוחם"><button class="btn small danger" data-deact="${esc(s.id)}">הסרה</button></div>
+        <div class="roles" role="group" aria-label="תפקידים של ${esc(s.name)}">${[["commander", "מפ׳ מפקד"], ["carmelALead", "★ מוביל כרמל א׳"], ["davidDriver", "ד׳ נהג דוד"], ["tigrisDriver", "ט׳ נהג טיגריס"]].map(([r, l]) => `<button data-role="${esc(s.id)}|${r}" aria-pressed="${(s.roles || []).includes(r)}">${l}</button>`).join("")}</div></li>`).join("")}</ul>
       <form class="setrow" id="addSoldier"><input class="inp" id="newSoldier" placeholder="שם לוחם חדש" aria-label="שם לוחם חדש"><button class="btn primary small">הוספה</button></form>
       ${inact.length ? `<div class="lbl">הוסרו (ההיסטוריה שלהם נשמרת)</div><ul class="list">${inact.map(s => `<li class="item"><span>${esc(s.name)}</span><button class="btn small" data-react="${esc(s.id)}">החזרה</button></li>`).join("")}</ul>` : ""}
     </div>`;
@@ -583,7 +624,7 @@ document.addEventListener("change", async e => {
 document.addEventListener("keydown", e => { if (e.key === "Escape" && form) { form = null; drawForm(); } });
 
 /* ---------- data ---------- */
-function onData() { S.cache = null; if (S.notice === "loading") S.notice = ""; render(); }
+function onData() { S.cache = null; if (S.notice === "loading") S.notice = ""; render(); if (S.swap) drawSwap(); scheduleRepair(); }
 function onErr() { S.notice = "החיבור למאגר הנתונים נקטע. רעננו את הדף."; clearTimeout(loadTimer); render(); }
 let loadTimer;
 async function init() {
@@ -592,10 +633,14 @@ async function init() {
   if (!window.claude || !window.claude.use) { clearTimeout(loadTimer); S.notice = "המאגר זמין רק כשפותחים את הדף ב־claude.ai."; render(); return; }
   db = await window.claude.use("db");
   if (!db) { clearTimeout(loadTimer); S.notice = "אין גישה למאגר הנתונים בתצוגה הזו. צריך להיות מחובר ל־claude.ai."; render(); return; }
-  const fresh = () => { if (S.loaded.soldiers && S.loaded.absences && S.loaded.settings) { clearTimeout(loadTimer); if (S.notice.startsWith("לא ניתן להגיע")) S.notice = ""; } };
+  try { const user = await window.claude.use("user"); S.isOwner = user ? user.isOwner() !== false : true; } catch { S.isOwner = true; }
+  if (!S.isOwner) { S.tab = "sched"; }
+  const fresh = () => { if (S.loaded.soldiers && S.loaded.absences && S.loaded.settings && S.loaded.schedule && S.loaded.schedSettings) { clearTimeout(loadTimer); if (S.notice.startsWith("לא ניתן להגיע")) S.notice = ""; } };
   db.collection("soldiers").onSnapshot(snap => { S.soldiers = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (a.order ?? 0) - (b.order ?? 0)); if (!snap.metadata.fromCache) S.loaded.soldiers = true; fresh(); onData(); }, onErr);
   db.collection("absences").onSnapshot(snap => { S.absences = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(a => a.start && a.end && TYPES[a.type]); if (!snap.metadata.fromCache) S.loaded.absences = true; fresh(); onData(); }, onErr);
   db.doc("settings/main").onSnapshot(snap => { S.settings = snap.exists ? snap.data() : null; if (!snap.metadata.fromCache) S.loaded.settings = true; fresh(); onData(); }, onErr);
+  db.collection("schedule").onSnapshot(snap => { const o = {}; snap.docs.forEach(d => { o[d.id] = d.data(); }); S.schedule = o; if (!snap.metadata.fromCache) S.loaded.schedule = true; fresh(); onData(); }, onErr);
+  db.doc("settings/schedule").onSnapshot(snap => { S.schedSettings = snap.exists ? { dayTypes: {}, ...snap.data() } : { dayTypes: {} }; if (!snap.metadata.fromCache) S.loaded.schedSettings = true; fresh(); onData(); }, onErr);
 }
 
 /* ---------- attendance report ---------- */
@@ -656,6 +701,543 @@ document.addEventListener("click", async e => {
 function routeHash() { if (location.hash === "#report") { S.tab = "report"; S.repMode = "now"; render(); window.scrollTo(0, 0); } }
 window.addEventListener("hashchange", routeHash);
 if (location.hash === "#report") { S.tab = "report"; }
+
+/* ==== SCHEDULER ENGINE START ==== */
+/* Pure scheduling engine (no DOM, no db). Builds, repairs and validates the duty roster.
+   Mission day = 06:30 -> 06:30 next day. Times are local "YYYY-MM-DDTHH:MM" strings. */
+const SCHED = (() => {
+  const P2 = n => String(n).padStart(2, "0");
+  const kOf = d => `${d.getFullYear()}-${P2(d.getMonth() + 1)}-${P2(d.getDate())}`;
+  const dO = k => { const [y, m, d] = k.split("-").map(Number); return new Date(y, m - 1, d); };
+  const plusDays = (k, n) => { const d = dO(k); d.setDate(d.getDate() + n); return kOf(d); };
+  const T = s => { const [d, t = "00:00"] = s.split("T"); const [h, mi] = t.split(":").map(Number); const x = dO(d); x.setHours(h, mi, 0, 0); return x.getTime(); };
+  const fmt = t => { const d = new Date(t); return `${kOf(d)}T${P2(d.getHours())}:${P2(d.getMinutes())}`; };
+  const HOUR = 3600000;
+  const ROLE = { commander: "commander", david: "davidDriver", tigris: "tigrisDriver", lead: "carmelALead" };
+  const ROLE_LABEL = { commander: "מפקד", davidDriver: "נהג דוד", tigrisDriver: "נהג טיגריס", carmelALead: "אברג׳יל/אביאל" };
+  const SIZE = { carmelA: 8, patrol: 7, carmelB: 4 };
+  const REQS = { carmelA: [ROLE.lead, ROLE.tigris], patrol: [ROLE.commander, ROLE.david], carmelB: [ROLE.commander] };
+  const KIND_LABEL = { carmelA: "כרמל א׳", patrol: "סיור" };
+
+  function dayWindow(key) { return [T(`${key}T06:30`), T(`${plusDays(key, 1)}T06:30`)]; }
+  function template(key, type) {
+    const n = plusDays(key, 1);
+    if (type === "post") return [["carmelA", `${key}T06:30`, `${key}T18:30`], ["carmelA", `${key}T18:30`, `${n}T06:30`]];
+    if (type === "patrol") return [["patrol", `${key}T06:30`, `${key}T14:30`], ["patrol", `${key}T14:30`, `${key}T22:30`], ["patrol", `${key}T22:30`, `${n}T06:30`]];
+    return [];
+  }
+  // deterministic tie-break in [0,1)
+  function tb(id, salt) { let h = 2166136261; const s = id + "|" + salt; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return ((h >>> 0) % 10000) / 10000; }
+
+  function makeCtx(input) {
+    const sold = (input.soldiers || []).filter(s => s.active !== false);
+    const abs = {};
+    for (const a of input.absences || []) { if (a && a.soldierId && a.start && a.end) (abs[a.soldierId] = abs[a.soldierId] || []).push([T(a.start), T(a.end)]); }
+    const roles = {}, stats = {}, names = {};
+    for (const s of sold) {
+      roles[s.id] = new Set(Array.isArray(s.roles) ? s.roles : []);
+      stats[s.id] = { A: 0, B: 0, guard: 0, patrol: 0, kitchen: 0, load: 0, busy: [], lastEnd: 0, lastGuard: 0 };
+      names[s.id] = s.name;
+    }
+    for (const s of input.soldiers || []) names[s.id] = names[s.id] || s.name;
+    return { ids: sold.map(s => s.id), abs, roles, stats, names, now: input.now ?? Date.now() };
+  }
+  const free = (c, id, t0, t1) => !!c.stats[id] && !(c.abs[id] || []).some(([a, b]) => a < t1 && b > t0);
+  const has = (c, id, r) => !!(c.roles[id] && c.roles[id].has(r));
+  const busyAt = (c, id, t0, t1) => c.stats[id].busy.some(([a, b]) => a < t1 && b > t0);
+  function book(c, id, t0, t1, kind) {
+    const st = c.stats[id]; if (!st) return;
+    const h = (t1 - t0) / HOUR;
+    st.busy.push([t0, t1]); st[kind] += h; st.load += h;
+    st.lastEnd = Math.max(st.lastEnd, t1);
+    if (kind === "guard") st.lastGuard = t1;
+  }
+  const scarcity = (c, id) => [ROLE.lead, ROLE.tigris, ROLE.commander, ROLE.david].reduce((n, r) => n + (has(c, id, r) ? 15 : 0), 0);
+
+  // Pick a group of n from cands, keeping `locked` (and `keep` in repair mode), satisfying role requirements.
+  function pickGroup(c, n, cands, reqs, score, locked, keep, block) {
+    const inC = new Set(cands);
+    let members = [...new Set(locked || [])].filter(id => inC.has(id)).slice(0, n);
+    const lockedSet = new Set(members);
+    for (const id of keep || []) if (inC.has(id) && !members.includes(id) && members.length < n) members.push(id);
+    const pool = () => cands.filter(id => !members.includes(id)).sort((a, b) => score(a) - score(b));
+    for (const r of reqs) {
+      if (members.some(id => has(c, id, r))) continue;
+      const cand = pool().find(id => has(c, id, r));
+      if (!cand) continue;
+      if (members.length >= n) {
+        const removable = members.filter(id => !lockedSet.has(id) && !reqs.some(r2 => r2 !== r && has(c, id, r2) && members.filter(m => has(c, m, r2)).length === 1))
+          .sort((a, b) => score(b) - score(a));
+        if (!removable.length) continue;
+        members = members.filter(x => x !== removable[0]);
+      }
+      members.push(cand);
+    }
+    // fill the rest by fairness score; `block` keeps scarce-role holders free for other missions when possible
+    for (const id of pool()) { if (members.length >= n) break; if (block && block(id, members)) continue; members.push(id); }
+    for (const id of pool()) { if (members.length >= n) break; members.push(id); }
+    return members;
+  }
+
+  function buildDay(c, key, type, prev, mode) {
+    const doc = { type, kitchen: null, kitchenLocked: false, shifts: [], hours: [] };
+    if (type !== "post" && type !== "patrol") return doc;
+    const [d0, d1] = dayWindow(key);
+    const same = !!prev && prev.type === type;
+    const frozen = t => t < c.now;
+    const repair = mode === "repair";
+
+    // kitchen duty (whole day)
+    const pk = same ? prev.kitchen : null, pkLocked = same && !!prev.kitchenLocked;
+    const k0 = Math.max(d0, Math.min(c.now, d1)); // a day in progress only needs cover for its remaining part
+    if (same && frozen(d0) && pk && free(c, pk, k0, d1)) { doc.kitchen = pk; doc.kitchenLocked = pkLocked; }
+    else {
+      // mid-day replacement: not someone in a shift/guard that is running now; prefer people without later missions today
+      const midDay = same && frozen(d0);
+      const runningNow = new Set(midDay ? [...(prev.shifts || []).filter(x => T(x.start) <= c.now && T(x.end) > c.now).flatMap(x => x.members || []), ...(prev.hours || []).filter(h => T(h.start) <= c.now && T(h.start) + HOUR > c.now).map(h => h.guard)] : []);
+      const laterToday = new Set(midDay ? [...(prev.shifts || []).filter(x => T(x.start) > c.now).flatMap(x => x.members || []), ...(prev.hours || []).filter(h => T(h.start) > c.now).map(h => h.guard)] : []);
+      const cands = c.ids.filter(id => free(c, id, k0, d1) && !busyAt(c, id, k0, k0 + 1) && !runningNow.has(id));
+      if (pk && cands.includes(pk) && (pkLocked || repair)) { doc.kitchen = pk; doc.kitchenLocked = pkLocked; }
+      else {
+        // never take someone whose role the day's missions cannot do without
+        const shifts = template(key, type);
+        const need = id => {
+          let p = 0;
+          for (const [kind, s, e] of shifts) for (const r of REQS[kind]) {
+            if (!has(c, id, r)) continue;
+            const others = c.ids.filter(o => o !== id && has(c, o, r) && free(c, o, T(s), T(e))).length;
+            p += others === 0 ? 10000 : others === 1 ? 300 : 0;
+          }
+          if (type === "post" && has(c, id, ROLE.commander)) p += 40;
+          return p;
+        };
+        const sc = id => need(id) + (laterToday.has(id) ? 500 : 0) + c.stats[id].kitchen * 100 + c.stats[id].load + scarcity(c, id) + tb(id, key + "k");
+        doc.kitchen = cands.sort((a, b) => sc(a) - sc(b))[0] || null;
+      }
+    }
+    if (doc.kitchen && c.stats[doc.kitchen]) { c.stats[doc.kitchen].kitchen += 1; c.stats[doc.kitchen].load += 4; }
+
+    // carmel A shifts / patrols
+    template(key, type).forEach(([kind, s, e], i) => {
+      const t0 = T(s), t1 = T(e);
+      const ps = same && prev.shifts ? prev.shifts[i] : null;
+      const locked = ps && Array.isArray(ps.locked) ? ps.locked : [];
+      let members;
+      if (ps && frozen(t0)) members = [...(ps.members || [])];
+      else {
+        const cands = c.ids.filter(id => id !== doc.kitchen && free(c, id, t0, t1) && !busyAt(c, id, t0, t1));
+        const score = id => {
+          const st = c.stats[id];
+          let v = st.load + (kind === "carmelA" ? st.A : st.patrol) * 0.5 + tb(id, s);
+          if (st.lastEnd && t0 - st.lastEnd < 6 * HOUR) v += 200; // avoid back-to-back
+          return v;
+        };
+        // a second holder of a required role is only taken if others remain for the next shift / carmel B
+        const block = (id, mem) => {
+          for (const r of REQS[kind]) if (has(c, id, r) && mem.some(m => has(c, m, r))) return true;
+          if (kind === "carmelA" && has(c, id, ROLE.commander)) {
+            const left = cands.filter(o => o !== id && !mem.includes(o) && has(c, o, ROLE.commander)).length;
+            if (left < 2) return true; // keep at least two commanders outside carmel A for carmel B
+          }
+          return false;
+        };
+        members = pickGroup(c, SIZE[kind], cands, REQS[kind], score, locked, repair && ps ? ps.members : [], block);
+      }
+      members.forEach(id => book(c, id, t0, t1, kind === "carmelA" ? "A" : "patrol"));
+      doc.shifts.push({ kind, start: s, end: e, members, locked: locked.filter(id => members.includes(id)) });
+    });
+
+    // post: hourly rear-position guard + carmel B (4, with a commander)
+    if (type === "post") {
+      let prevB = [];
+      let i = 0;
+      for (let t = d0; t < d1; t += HOUR, i++) {
+        const te = Math.min(t + HOUR, d1), s = fmt(t);
+        const ph = same && prev.hours ? prev.hours[i] : null;
+        const sh = doc.shifts.find(x => T(x.start) <= t && T(x.end) > t);
+        const A = sh ? sh.members : [];
+        let guard = null, B = [];
+        if (ph && frozen(t)) { guard = ph.guard || null; B = [...(ph.carmelB || [])]; }
+        else {
+          const base = c.ids.filter(id => !A.includes(id) && free(c, id, t, te) && !busyAt(c, id, t, te));
+          const gc = base.filter(id => id !== doc.kitchen);
+          const cmdAvail = base.filter(id => has(c, id, ROLE.commander)).length;
+          const gScore = id => {
+            const st = c.stats[id];
+            let v = st.guard * 10 + st.load * 0.6 + tb(id, s + "g");
+            if (st.lastEnd && t - st.lastEnd < 2 * HOUR && !(st.lastGuard && st.lastGuard === st.lastEnd)) v += 150; // just finished a long shift
+            if (st.lastGuard && t - st.lastGuard < 3 * HOUR) v += 500;
+            if (prevB.includes(id)) v += 30;
+            if (has(c, id, ROLE.commander) && cmdAvail <= 1) v += 1000;
+            return v;
+          };
+          if (ph && ph.guardLocked && gc.includes(ph.guard)) guard = ph.guard;
+          else if (repair && ph && gc.includes(ph.guard)) guard = ph.guard;
+          else guard = gc.sort((a, b) => gScore(a) - gScore(b))[0] || null;
+          const bc = base.filter(id => id !== guard);
+          const bScore = id => (prevB.includes(id) ? -1000 : 0) + (id === doc.kitchen ? -50 : 0) + c.stats[id].B + c.stats[id].load * 0.2 + tb(id, s + "b");
+          B = pickGroup(c, SIZE.carmelB, bc, REQS.carmelB, bScore, ph && ph.bLocked, repair && ph ? ph.carmelB : []);
+        }
+        if (guard) book(c, guard, t, te, "guard");
+        for (const id of B) if (c.stats[id]) { c.stats[id].B += (te - t) / HOUR; c.stats[id].load += 0.3 * (te - t) / HOUR; }
+        doc.hours.push({
+          start: s, guard, guardLocked: !!(ph && ph.guardLocked && ph.guard === guard),
+          carmelB: B, bLocked: ((ph && ph.bLocked) || []).filter(id => B.includes(id)),
+        });
+        prevB = B;
+      }
+    }
+    return doc;
+  }
+
+  /* input: { soldiers:[{id,name,active,roles}], absences:[{soldierId,start,end}], days:[key], dayTypes:{key:type}, now }
+     existing: { key: doc }  mode: "rebuild" (keep only locked + past) | "repair" (keep every still-valid assignment) */
+  function buildAll(input, existing, mode) {
+    const c = makeCtx(input), docs = {};
+    for (const key of [...(input.days || [])].sort()) {
+      const type = (input.dayTypes && input.dayTypes[key]) || "post";
+      if (!(existing && existing[key]) && dayWindow(key)[1] <= c.now) continue; // never invent a roster for days already over
+      docs[key] = buildDay(c, key, type, (existing && existing[key]) || null, mode || "repair");
+    }
+    return { docs, stats: c.stats };
+  }
+
+  // Hard-rule check of a roster; returns { key: [problem, ...] }.
+  function validate(input, docs) {
+    const c = makeCtx(input), out = {}, iv = {};
+    const nm = id => c.names[id] || "לוחם לא ידוע";
+    const busy = (id, t0, t1, what, key) => { (iv[id] = iv[id] || []).push([t0, t1, what, key]); };
+    for (const key of [...(input.days || [])].sort()) {
+      const d = docs[key], list = (out[key] = []);
+      if (!d || (d.type !== "post" && d.type !== "patrol")) continue;
+      const [d0, d1] = dayWindow(key);
+      const chk = (id, t0, t1, lab) => {
+        if (!c.stats[id]) list.push(`${lab}: ${nm(id)} לא בסד״כ הפעיל`);
+        else if (t1 > c.now && !free(c, id, t0, t1)) list.push(`${lab}: ${nm(id)} לא זמין`);
+      };
+      if (!d.kitchen) list.push("אין תורן מטבח"); else chk(d.kitchen, Math.max(d0, Math.min(c.now, d1)), d1, "תורן מטבח");
+      for (const sh of d.shifts || []) {
+        const t0 = T(sh.start), t1 = T(sh.end), lab = `${KIND_LABEL[sh.kind]} ${sh.start.slice(11)}`;
+        const m = sh.members || [];
+        if (m.length < SIZE[sh.kind]) list.push(`${lab}: חסרים ${SIZE[sh.kind] - m.length} לוחמים`);
+        if (new Set(m).size !== m.length) list.push(`${lab}: לוחם משובץ פעמיים`);
+        for (const r of REQS[sh.kind]) if (!m.some(id => has(c, id, r))) list.push(`${lab}: חסר ${ROLE_LABEL[r]}`);
+        if (d.kitchen && m.includes(d.kitchen) && t1 > c.now) list.push(`${lab}: תורן המטבח משובץ`);
+        m.forEach(id => { chk(id, t0, t1, lab); busy(id, t0, t1, lab, key); });
+      }
+      for (const h of d.hours || []) {
+        const t0 = T(h.start), t1 = Math.min(t0 + HOUR, d1), lab = `שעה ${h.start.slice(11)}`;
+        const sh = (d.shifts || []).find(x => T(x.start) <= t0 && T(x.end) > t0);
+        const A = sh ? sh.members : [];
+        if (!h.guard) list.push(`${lab}: אין שומר בעמדה`);
+        else {
+          if (A.includes(h.guard)) list.push(`${lab}: השומר (${nm(h.guard)}) בכרמל א׳`);
+          if (h.guard === d.kitchen && t1 > c.now) list.push(`${lab}: תורן המטבח שומר`);
+          chk(h.guard, t0, t1, `${lab} עמדה`); busy(h.guard, t0, t1, `${lab} עמדה`, key);
+        }
+        const B = h.carmelB || [];
+        if (B.length < SIZE.carmelB) list.push(`${lab}: בכרמל ב׳ חסרים ${SIZE.carmelB - B.length}`);
+        if (!B.some(id => has(c, id, ROLE.commander))) list.push(`${lab}: אין מפקד בכרמל ב׳`);
+        if (new Set(B).size !== B.length) list.push(`${lab}: לוחם כפול בכרמל ב׳`);
+        for (const id of B) {
+          if (A.includes(id)) list.push(`${lab}: ${nm(id)} גם בכרמל א׳ וגם בכרמל ב׳`);
+          if (id === h.guard) list.push(`${lab}: ${nm(id)} גם בעמדה וגם בכרמל ב׳`);
+          chk(id, t0, t1, `${lab} כרמל ב׳`);
+        }
+      }
+    }
+    // double booking across missions (carmel A / patrol / guard)
+    for (const id of Object.keys(iv)) {
+      const xs = iv[id].sort((a, b) => a[0] - b[0]);
+      for (let i = 1; i < xs.length; i++) if (xs[i][0] < xs[i - 1][1]) (out[xs[i][3]] = out[xs[i][3]] || []).push(`${nm(id)} משובץ בו־זמנית: ${xs[i - 1][2]} ו${xs[i][2]}`);
+    }
+    for (const k of Object.keys(out)) out[k] = [...new Set(out[k])];
+    return out;
+  }
+
+  // All assignments of one soldier, for the "my missions" view.
+  function assignmentsOf(docs, id) {
+    const out = [];
+    for (const key of Object.keys(docs).sort()) {
+      const d = docs[key]; if (!d) continue;
+      if (d.kitchen === id) out.push({ key, what: "תורן מטבח", start: `${key}T06:30`, end: `${plusDays(key, 1)}T06:30` });
+      for (const sh of d.shifts || []) if ((sh.members || []).includes(id)) out.push({ key, what: KIND_LABEL[sh.kind], start: sh.start, end: sh.end });
+      // merge consecutive hours of guard / carmel B into ranges
+      for (const [field, what] of [["guard", "עמדה אחורית"], ["carmelB", "כרמל ב׳"]]) {
+        let cur = null;
+        for (const h of d.hours || []) {
+          const on = field === "guard" ? h.guard === id : (h.carmelB || []).includes(id);
+          const hs = h.start, he = fmt(T(h.start) + HOUR);
+          if (on && cur && cur.end === hs) cur.end = he;
+          else if (on) { cur = { key, what, start: hs, end: he }; out.push(cur); }
+          else cur = null;
+        }
+      }
+    }
+    return out.sort((a, b) => a.start.localeCompare(b.start));
+  }
+
+  return { buildAll, validate, assignmentsOf, dayWindow, template, ROLE, ROLE_LABEL, SIZE, KIND_LABEL, HOUR, T, fmt, plusDays };
+})();
+/* ==== SCHEDULER ENGINE END ==== */
+
+/* ---------- duty roster (שבצ"ק): state, data, auto-repair ---------- */
+S.schedule = {}; S.schedSettings = { dayTypes: {} }; S.isOwner = true;
+S.loaded.schedule = false; S.loaded.schedSettings = false;
+S.schedDay = null; S.swap = null; S.myId = ""; S.rebuildStep = 0; S.schedBusy = false; S.schedView = "days";
+const ROLE_SHORT = { commander: "מפ׳", davidDriver: "ד׳", tigrisDriver: "ט׳", carmelALead: "★" };
+const ROLE_ORDER = ["commander", "carmelALead", "davidDriver", "tigrisDriver"];
+const DAY_TYPE = { post: "מוצב", patrol: "סיור", none: "ללא משימות" };
+function schedInput() { return { soldiers: S.soldiers, absences: S.absences, days: reserveDays(), dayTypes: S.schedSettings.dayTypes || {}, now: Date.now() }; }
+function dayTypeOf(k) { return (S.schedSettings.dayTypes || {})[k] || "post"; }
+function canon(v) { if (Array.isArray(v)) return "[" + v.map(canon).join(",") + "]"; if (v && typeof v === "object") return "{" + Object.keys(v).filter(k => k !== "updatedAt").sort().map(k => JSON.stringify(k) + ":" + canon(v[k])).join(",") + "}"; return JSON.stringify(v ?? null); }
+async function saveSchedule(docs) {
+  S.schedBusy = true;
+  let n = 0;
+  try {
+    for (const key of Object.keys(docs).sort()) {
+      if (canon(docs[key]) === canon(S.schedule[key] || null)) continue;
+      await write(db.collection("schedule").doc(key), "set", { ...docs[key], updatedAt: new Date().toISOString() });
+      n++;
+    }
+  } catch (e) { toast(writeError(e)); }
+  finally { S.schedBusy = false; }
+  return n;
+}
+let repairT = null;
+function scheduleRepair() {
+  if (!S.isOwner || !db) return;
+  const ready = S.loaded.soldiers && S.loaded.absences && S.loaded.settings && S.loaded.schedule && S.loaded.schedSettings;
+  if (!ready || !Object.keys(S.schedule).length) return;
+  clearTimeout(repairT);
+  repairT = setTimeout(async () => {
+    if (S.schedBusy) return scheduleRepair();
+    const { docs } = SCHED.buildAll(schedInput(), S.schedule, "repair");
+    const n = await saveSchedule(docs);
+    if (n) toast(`השבצ״ק עודכן אוטומטית (${n} ימים)`);
+  }, 1200);
+}
+
+/* ---------- duty roster: rendering ---------- */
+function nameChip(id, ref, locked, warnIds) {
+  const s = S.soldiers.find(x => x.id === id);
+  const nm = s ? s.name : "—";
+  const roles = (s && s.roles || []).filter(r => r !== "carmelALead" || true).sort((a, b) => ROLE_ORDER.indexOf(a) - ROLE_ORDER.indexOf(b)).map(r => `<i>${ROLE_SHORT[r] || ""}</i>`).join("");
+  locked = locked && S.isOwner; // locks are a management detail
+  const cls = `mchip${locked ? " locked" : ""}${warnIds && warnIds.has(id) ? " bad" : ""}`;
+  const inner = `${esc(nm)}${roles ? `<span class="rb">${roles}</span>` : ""}${locked ? " 🔒" : ""}`;
+  return S.isOwner && ref ? `<button class="${cls}" data-swap="${esc(ref)}">${inner}</button>` : `<span class="${cls}">${inner}</span>`;
+}
+function emptyChip(ref) { return S.isOwner ? `<button class="mchip empty-slot" data-swap="${esc(ref)}">+ חסר</button>` : `<span class="mchip empty-slot">חסר</span>`; }
+function unavailableIds(key) {
+  // soldiers flagged as unavailable/inactive in this day's problems
+  const out = new Set(); const d = S.schedule[key]; if (!d) return out;
+  const input = schedInput(); const now = Date.now();
+  const busy = id => (S.absences || []).filter(a => a.soldierId === id);
+  const check = (id, t0, t1) => { if (t1 <= now) return; const s = S.soldiers.find(x => x.id === id); if (!s || s.active === false || busy(id).some(a => ms(a.start) < t1 && ms(a.end) > t0)) out.add(id); };
+  const [d0, d1] = SCHED.dayWindow(key);
+  if (d.kitchen) check(d.kitchen, d0, d1);
+  for (const sh of d.shifts || []) for (const id of sh.members || []) check(id, ms(sh.start), ms(sh.end));
+  for (const h of d.hours || []) { const t0 = ms(h.start); if (h.guard) check(h.guard, t0, t0 + SCHED.HOUR); for (const id of h.carmelB || []) check(id, t0, t0 + SCHED.HOUR); }
+  return out;
+}
+function dayBody(key, problems) {
+  const d = S.schedule[key];
+  const type = d ? d.type : dayTypeOf(key);
+  if (!d) return `<div class="muted">עוד לא שובץ.</div>`;
+  if (type === "none") return `<div class="muted">אין משימות ביום הזה.</div>`;
+  const bad = unavailableIds(key);
+  let out = `<div class="srow2"><span class="lbl">תורן מטבח</span><div class="chips">${d.kitchen ? nameChip(d.kitchen, `k`, d.kitchenLocked, bad) : emptyChip("k")}</div></div>`;
+  (d.shifts || []).forEach((sh, i) => {
+    const label = `${SCHED.KIND_LABEL[sh.kind]} ${span2(sh.start.slice(11), sh.end.slice(11))}`;
+    const chips = (sh.members || []).map(id => nameChip(id, `s|${i}|${id}`, (sh.locked || []).includes(id), bad)).join("");
+    const missing = Math.max(0, SCHED.SIZE[sh.kind] - (sh.members || []).length);
+    out += `<div class="srow2"><span class="lbl">${label} <span class="muted">(${(sh.members || []).length}/${SCHED.SIZE[sh.kind]})</span></span><div class="chips">${chips}${Array.from({ length: missing }, () => emptyChip(`s|${i}|+`)).join("")}</div></div>`;
+  });
+  if (type === "post" && (d.hours || []).length) {
+    out += `<div class="lbl" style="margin-top:6px">עמדה אחורית וכרמל ב׳ (לפי שעה)</div><div class="htable" role="table">
+      <div class="hrow hhead" role="row"><span>שעה</span><span>עמדה</span><span>כרמל ב׳</span></div>`;
+    d.hours.forEach((h, i) => {
+      const B = (h.carmelB || []).map(id => nameChip(id, `b|${i}|${id}`, (h.bLocked || []).includes(id), bad)).join("");
+      const miss = Math.max(0, SCHED.SIZE.carmelB - (h.carmelB || []).length);
+      out += `<div class="hrow" role="row"><span class="num">${h.start.slice(11)}</span><span>${h.guard ? nameChip(h.guard, `g|${i}`, h.guardLocked, bad) : emptyChip(`g|${i}`)}</span><span class="chips">${B}${Array.from({ length: miss }, () => emptyChip(`b|${i}|+`)).join("")}</span></div>`;
+    });
+    out += `</div>`;
+  }
+  if (problems && problems.length) out = `<div class="probs" role="alert"><b>${problems.length} בעיות:</b><ul>${problems.slice(0, 12).map(p => `<li>${esc(p)}</li>`).join("")}${problems.length > 12 ? `<li>ועוד ${problems.length - 12}…</li>` : ""}</ul></div>` + out;
+  return out;
+}
+function viewSched() {
+  const days = reserveDays();
+  const built = Object.keys(S.schedule).length > 0;
+  if (!days.length) return `<div class="panel empty">אין ימי מילואים מוגדרים.</div>`;
+  if (!activeSoldiers().some(s => (s.roles || []).length)) {
+    return `<div class="panel"><h2>שבצ״ק</h2><div class="muted">קודם מגדירים תפקידים ללוחמים (מפקד, נהג דוד, נהג טיגריס, אברג׳יל/אביאל) במסך ההגדרות.</div><button class="btn primary" data-tab="settings">להגדרות</button></div>`;
+  }
+  const problems = built ? SCHED.validate(schedInput(), S.schedule) : {};
+  const totalProbs = Object.values(problems).reduce((n, l) => n + l.length, 0);
+  const head = `<div class="panel"><div class="row"><h2>שבצ״ק</h2>
+      <div class="seg" role="group"><button data-sview="days" aria-pressed="${S.schedView === "days"}">ימים</button><button data-sview="fair" aria-pressed="${S.schedView === "fair"}">הוגנות</button></div></div>
+    ${built ? `<div class="muted" style="font-size:.88rem">השבצ״ק מתעדכן אוטומטית כשמוסיפים יציאה או משנים לוחמים. שיבוץ ידני ננעל 🔒 ולא משתנה.${totalProbs ? ` <b style="color:var(--bad)">יש ${totalProbs} בעיות שדורשות טיפול.</b>` : ` <b style="color:var(--ok)">כל הכללים מתקיימים.</b>`}</div>` : `<div class="muted">לוחצים "בניית שבצ״ק" והמערכת משבצת את כל ימי הסבב לפי הכללים ובחלוקה הוגנת. אפשר לשנות כל שיבוץ אחר כך.</div>`}
+    <div class="actions">${built ? `<button class="btn danger" data-act="rebuild">${["בנייה מחדש של הימים הבאים", "בטוח? שיבוצים שלא ננעלו יוחלפו", "לחיצה אחרונה: לבנות מחדש"][S.rebuildStep]}</button>${S.rebuildStep ? `<button class="btn" data-act="rebuildcancel">ביטול</button>` : ""}` : `<button class="btn primary" data-act="build">בניית שבצ״ק</button>`}</div></div>`;
+  if (S.schedView === "fair" && built) return head + viewFairness();
+  const rows = days.map(k => {
+    const type = S.schedule[k] ? S.schedule[k].type : dayTypeOf(k);
+    const n = (problems[k] || []).length;
+    const d = dOf(k);
+    return `<div class="dayrow">
+      <button class="dlink" data-sday="${k}"><b>${DOW[d.getDay()]} ${short(k)}</b><span class="muted">${DAY_TYPE[type]}</span></button>
+      <div class="seg small" role="group" aria-label="סוג יום">${Object.entries(DAY_TYPE).map(([t, l]) => `<button data-dtype="${k}|${t}" aria-pressed="${dayTypeOf(k) === t}">${t === "none" ? "ללא" : l}</button>`).join("")}</div>
+      <span class="chip ${!built || !S.schedule[k] ? "c-nir" : n ? "bad" : "c-present"}">${!built || !S.schedule[k] ? "—" : n ? `${n} בעיות` : "תקין"}</span></div>`;
+  }).join("");
+  return head + `<div class="panel"><div class="lbl">ימי הסבב · לחיצה על יום לפרטים</div><div class="daylist">${rows}</div></div>`;
+}
+function viewFairness() {
+  const { stats } = SCHED.buildAll(schedInput(), S.schedule, "repair");
+  const rows = activeSoldiers().map(s => ({ s, st: stats[s.id] })).filter(x => x.st)
+    .sort((a, b) => b.st.load - a.st.load)
+    .map(({ s, st }) => `<tr><td>${esc(s.name)}</td><td class="num">${Math.round(st.A)}</td><td class="num">${Math.round(st.B)}</td><td class="num">${Math.round(st.guard)}</td><td class="num">${Math.round(st.patrol)}</td><td class="num">${st.kitchen}</td></tr>`).join("");
+  return `<div class="panel"><h2>חלוקת שעות לפי לוחם</h2><div class="muted" style="font-size:.85rem">שעות בכל משימה לאורך כל הסבב (כולל ימים שעברו). המערכת משבצת כך שהעומס יתחלק כמה שיותר שווה.</div>
+    <div style="overflow-x:auto"><table class="ftable"><thead><tr><th>לוחם</th><th>כרמל א׳</th><th>כרמל ב׳</th><th>עמדה</th><th>סיור</th><th>מטבח (ימים)</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+}
+function viewSchedDay() {
+  const days = reserveDays(), k = S.schedDay;
+  if (!days.includes(k)) { S.tab = "sched"; return viewSched(); }
+  const i = days.indexOf(k), prev = days[i - 1], next = days[i + 1];
+  const problems = Object.keys(S.schedule).length ? (SCHED.validate(schedInput(), S.schedule)[k] || []) : [];
+  return `<div class="panel">
+    <div class="dayhead"><button class="btn small" ${prev ? `data-sday="${prev}"` : "disabled"} aria-label="יום קודם">→</button><h2>${longDate(k)}</h2><button class="btn small" ${next ? `data-sday="${next}"` : "disabled"} aria-label="יום הבא">←</button></div>
+    <div class="row"><span class="eyebrow">${DAY_TYPE[S.schedule[k] ? S.schedule[k].type : dayTypeOf(k)]} · ${span2("06:30", "06:30")} למחרת</span>${S.isOwner ? `<button class="btn small ghost" data-tab="sched">חזרה לשבצ״ק</button>` : ""}</div>
+    ${dayBody(k, problems)}
+    ${S.isOwner ? `<div class="muted" style="font-size:.82rem">לחיצה על שם מאפשרת להחליף לוחם. ★ אברג׳יל/אביאל · מפ׳ מפקד · ד׳ נהג דוד · ט׳ נהג טיגריס</div>` : ""}
+  </div>`;
+}
+
+/* ---------- viewer (read-only) screen for the fighters ---------- */
+function viewViewer() {
+  const days = reserveDays(), tk = todayKey();
+  const opts = activeSoldiers().map(s => `<option value="${esc(s.id)}" ${S.myId === s.id ? "selected" : ""}>${esc(s.name)}</option>`).join("");
+  let body;
+  if (!Object.keys(S.schedule).length) body = `<div class="panel empty">השבצ״ק עוד לא פורסם.</div>`;
+  else if (S.myId) {
+    const list = SCHED.assignmentsOf(S.schedule, S.myId);
+    body = `<div class="panel"><h2>המשימות של ${esc(nameOf(S.myId))}</h2>${list.length ? `<ul class="list">${list.map(a => {
+      const end = a.end.slice(0, 10) === a.start.slice(0, 10) ? a.end.slice(11) : `${short(a.end.slice(0, 10))} ${a.end.slice(11)}`;
+      return `<li class="item"><div><div class="who">${esc(a.what)}</div><div class="meta">${DOW[dOf(a.start.slice(0, 10)).getDay()]} ${short(a.start.slice(0, 10))} · ${span2(a.start.slice(11), end)}</div></div></li>`;
+    }).join("")}</ul>` : `<div class="empty">אין משימות משובצות.</div>`}</div>`;
+  } else {
+    body = days.map(k => `<details class="panel vday" ${k === tk || (!days.includes(tk) && k === days.find(x => x >= tk)) ? "open" : ""}><summary><b>${longDate(k)}</b> <span class="muted">· ${DAY_TYPE[S.schedule[k] ? S.schedule[k].type : dayTypeOf(k)]}</span></summary>${dayBody(k, null)}</details>`).join("");
+  }
+  return `<div class="panel"><div class="row"><h2>שבצ״ק הצוות</h2><span class="muted" style="font-size:.85rem">צפייה בלבד · מתעדכן אוטומטית</span></div>
+    <div class="field"><label for="myId">המשימות שלי</label><select id="myId" class="inp"><option value="">כל הצוות, כל הימים</option>${opts}</select></div></div>${body}`;
+}
+
+/* ---------- manual swap ---------- */
+const smodal = document.getElementById("smodal");
+function slotInfo(ref) {
+  const [kind, a, b] = ref.split("|");
+  const k = S.schedDay, d = S.schedule[k], [d0, d1] = SCHED.dayWindow(k);
+  if (kind === "k") return { title: "תורן מטבח", t0: d0, t1: d1, cur: d.kitchen };
+  if (kind === "s") { const sh = d.shifts[+a]; return { title: `${SCHED.KIND_LABEL[sh.kind]} ${sh.start.slice(11)}–${sh.end.slice(11)}`, t0: ms(sh.start), t1: ms(sh.end), cur: b === "+" ? null : b, idx: +a }; }
+  const h = d.hours[+a]; const t0 = ms(h.start);
+  if (kind === "g") return { title: `עמדה אחורית ${h.start.slice(11)}`, t0, t1: t0 + SCHED.HOUR, cur: h.guard, idx: +a };
+  return { title: `כרמל ב׳ ${h.start.slice(11)}`, t0, t1: t0 + SCHED.HOUR, cur: b === "+" ? null : b, idx: +a };
+}
+function busyReason(id, ref, info) {
+  const k = S.schedDay, d = S.schedule[k];
+  const s = S.soldiers.find(x => x.id === id);
+  if (!s || s.active === false) return "לא בסד״כ";
+  if (S.absences.some(a => a.soldierId === id && ms(a.start) < info.t1 && ms(a.end) > info.t0)) return "לא זמין (יציאה)";
+  const kind = ref.split("|")[0];
+  for (const [i, sh] of (d.shifts || []).entries()) if (!(kind === "s" && i === info.idx) && sh.members.includes(id) && ms(sh.start) < info.t1 && ms(sh.end) > info.t0) return `ב${SCHED.KIND_LABEL[sh.kind]}`;
+  if (kind !== "k" && kind !== "b" && d.kitchen === id) return "תורן מטבח";
+  if (kind === "k") { if ((d.shifts || []).some(sh => sh.members.includes(id))) return `משובץ ב${d.type === "post" ? "כרמל א׳" : "סיור"}`; }
+  for (const [i, h] of (d.hours || []).entries()) {
+    const t0 = ms(h.start); if (!(t0 < info.t1 && t0 + SCHED.HOUR > info.t0)) continue;
+    if (h.guard === id && !(kind === "g" && i === info.idx)) return "בעמדה";
+    if (kind !== "k" && (h.carmelB || []).includes(id) && !(kind === "b" && i === info.idx)) return "בכרמל ב׳";
+  }
+  return "";
+}
+function drawSwap() {
+  if (!S.swap) { smodal.innerHTML = ""; return; }
+  const info = slotInfo(S.swap.ref);
+  const rows = activeSoldiers().filter(s => s.id !== info.cur).map(s => {
+    const why = busyReason(s.id, S.swap.ref, info);
+    const roles = (s.roles || []).map(r => `<i>${ROLE_SHORT[r]}</i>`).join("");
+    return `<li><button class="pick" data-pickid="${esc(s.id)}" ${why ? "disabled" : ""}><span>${esc(s.name)} <span class="rb">${roles}</span></span><span class="muted">${why || "פנוי"}</span></button></li>`;
+  }).join("");
+  smodal.innerHTML = `<div class="overlay" data-act="sclose"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="swt">
+    <div class="row"><h2 id="swt">${esc(info.title)}${info.cur ? ` · במקום ${esc(nameOf(info.cur))}` : ""}</h2><button class="btn small ghost" data-act="sclose">סגירה</button></div>
+    <div class="muted" style="font-size:.85rem">הלוחם שתבחר יינעל 🔒 בשיבוץ הזה. המערכת תתקן אוטומטית את שאר השיבוצים אם צריך.</div>
+    ${info.cur && S.swap.locked ? `<button class="btn" data-act="unlock">שחרור הנעילה (המערכת תוכל להחליף)</button>` : ""}
+    <ul class="list picklist">${rows}</ul></div></div>`;
+}
+async function applySwap(newId) {
+  const ref = S.swap.ref, [kind, a, b] = ref.split("|"), k = S.schedDay;
+  const d = JSON.parse(JSON.stringify(S.schedule[k]));
+  const lockAdd = (arr, id) => { const x = (arr || []).filter(v => v !== b); if (id && !x.includes(id)) x.push(id); return x; };
+  if (kind === "k") { d.kitchen = newId; d.kitchenLocked = !!newId; }
+  else if (kind === "s") { const sh = d.shifts[+a]; sh.members = b === "+" ? [...sh.members, newId] : sh.members.map(x => x === b ? newId : x); sh.locked = lockAdd(sh.locked, newId); }
+  else if (kind === "g") { const h = d.hours[+a]; h.guard = newId; h.guardLocked = !!newId; }
+  else { const h = d.hours[+a]; h.carmelB = b === "+" ? [...h.carmelB, newId] : h.carmelB.map(x => x === b ? newId : x); h.bLocked = lockAdd(h.bLocked, newId); }
+  const existing = { ...S.schedule, [k]: d };
+  const { docs } = SCHED.buildAll(schedInput(), existing, "repair");
+  S.swap = null; drawSwap();
+  await saveSchedule({ ...docs, [k]: docs[k] });
+  toast("השיבוץ עודכן");
+}
+async function unlockSlot() {
+  const ref = S.swap.ref, [kind, a, b] = ref.split("|"), k = S.schedDay;
+  const d = JSON.parse(JSON.stringify(S.schedule[k]));
+  if (kind === "k") d.kitchenLocked = false;
+  else if (kind === "s") d.shifts[+a].locked = (d.shifts[+a].locked || []).filter(x => x !== b);
+  else if (kind === "g") d.hours[+a].guardLocked = false;
+  else d.hours[+a].bLocked = (d.hours[+a].bLocked || []).filter(x => x !== b);
+  S.swap = null; drawSwap();
+  await saveSchedule({ [k]: d }); toast("הנעילה שוחררה");
+}
+
+/* ---------- duty roster: events ---------- */
+document.addEventListener("click", async e => {
+  const el = e.target.closest("button, [data-act='sclose']"); if (!el) return;
+  const d = el.dataset;
+  if (d.act === "sclose") { if (e.target !== el && el.classList.contains("overlay")) return; S.swap = null; drawSwap(); return; }
+  if (d.sview) { S.schedView = d.sview; render(); return; }
+  if (d.sday) { S.schedDay = d.sday; S.tab = "schedday"; render(); window.scrollTo(0, 0); return; }
+  if (!S.isOwner) return;
+  if (d.dtype) {
+    const [k, t] = d.dtype.split("|");
+    const dayTypes = { ...(S.schedSettings.dayTypes || {}), [k]: t };
+    try { await write(db.doc("settings/schedule"), "set", { dayTypes }); toast(`${short(k)}: ${DAY_TYPE[t]}`); } catch (err) { toast(writeError(err)); }
+    return;
+  }
+  if (d.act === "build") {
+    const { docs } = SCHED.buildAll(schedInput(), {}, "rebuild");
+    const n = await saveSchedule(docs); toast(`נבנה שבצ״ק ל־${n} ימים`); return;
+  }
+  if (d.act === "rebuild") {
+    if (S.rebuildStep < 2) { S.rebuildStep++; render(); return; }
+    S.rebuildStep = 0;
+    const { docs } = SCHED.buildAll(schedInput(), S.schedule, "rebuild");
+    const n = await saveSchedule(docs); toast(n ? `השבצ״ק נבנה מחדש (${n} ימים)` : "אין שינויים"); render(); return;
+  }
+  if (d.act === "rebuildcancel") { S.rebuildStep = 0; render(); return; }
+  if (d.swap) {
+    const [kind, a, b] = d.swap.split("|"); const day = S.schedule[S.schedDay];
+    const locked = kind === "k" ? day.kitchenLocked : kind === "s" ? (day.shifts[+a].locked || []).includes(b) : kind === "g" ? day.hours[+a].guardLocked : (day.hours[+a].bLocked || []).includes(b);
+    S.swap = { ref: d.swap, locked }; drawSwap(); return;
+  }
+  if (d.pickid && S.swap) { await applySwap(d.pickid); return; }
+  if (d.act === "unlock" && S.swap) { await unlockSlot(); return; }
+  if (d.role) {
+    const [sid, role] = d.role.split("|"); const s = S.soldiers.find(x => x.id === sid); if (!s) return;
+    const roles = new Set(s.roles || []); roles.has(role) ? roles.delete(role) : roles.add(role);
+    try { await write(db.collection("soldiers").doc(sid), "update", { roles: [...roles] }); } catch (err) { toast(writeError(err)); }
+  }
+});
+document.addEventListener("change", e => { if (e.target.id === "myId") { S.myId = e.target.value; render(); } });
+document.addEventListener("keydown", e => { if (e.key === "Escape" && S.swap) { S.swap = null; drawSwap(); } });
 
 init();
 </script>

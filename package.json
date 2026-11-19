@@ -5,7 +5,8 @@
   "scripts": {
     "test:rules": "firebase emulators:exec --only firestore --project demo-matsevet \"node --test tests/rules.test.mjs\"",
     "test:web": "node --test tests/web.test.mjs",
-    "test": "npm run test:rules && npm run test:web"
+    "test:scheduler": "node --test tests/scheduler.test.mjs",
+    "test": "npm run test:scheduler && npm run test:rules && npm run test:web"
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "5.0.2",

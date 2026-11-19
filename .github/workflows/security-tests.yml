@@ -28,6 +28,8 @@ jobs:
         run: npm i --no-save playwright@1.63.0 && npx playwright install --with-deps chromium
       - name: Dependency audit (fails on high/critical)
         run: npm audit --omit=dev --audit-level=high
+      - name: Duty roster engine tests
+        run: npm run test:scheduler
       - name: Firestore rules tests (cross-user isolation, validation)
         run: npm run test:rules
       - name: App security tests (XSS, CSP, logout, clickjacking, regression)
